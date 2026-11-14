@@ -25,7 +25,6 @@ def test_backend_whose_package_is_missing_names_it(monkeypatch):  # INST-1b
     assert str(e.value) == "backend `openai` needs the package `openai-agents`, which is not installed"
 
 
-@pytest.mark.xfail(strict=True, reason="Task 10")
 def test_a_module_registers_itself_on_first_use():
     cls, settings = backend("scripted")
     assert isinstance(cls, type) and isinstance(settings, type)
