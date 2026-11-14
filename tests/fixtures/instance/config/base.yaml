@@ -1,0 +1,3 @@
+CORPUS_NAME: base
+CORPUS_PATH: /tmp/spike-corpus-base
+BRANCH_PREFIX: automated/refresh-base
