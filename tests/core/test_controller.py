@@ -108,7 +108,7 @@ async def test_a_call_beside_exit_refuses_both_and_runs_neither(run_node, run_di
     r = await run_node("refresh", {"sources": "polars"}, script=[
         [["tools__shell", {"command": "echo both"}], ["exit", {"outcome": "done", "outputs": {}}]]])
     assert [m.result.startswith("refused") for m in r.record] == [True, True] and shell_commands(run_dir) == []
-    assert [m.result for m in r.record] == [TOGETHER, TOGETHER] and r.result is None
+    assert [m.result for m in r.record] == [TOGETHER, TOGETHER] and r.run.result is None
 
 
 @pytest.mark.parametrize("alone", [["ask", {"question": "Which?"}], ["enter", {"node": "status"}]])
@@ -257,7 +257,7 @@ async def test_a_person_answers_with_the_run_label_given_and_the_answer_is_the_r
     r = await run_node("refresh", {}, person=person, label="refresh#3", script=[
         [["ask", {"question": "Which sources should I update?"}]], [["state_set", {"key": "sources", "value": "polars"}]]])
     assert person.asked == [("Which sources should I update?", "refresh#3")]
-    assert r.record[0].result == "polars" and r.result is None and not r.controller.ended
+    assert r.record[0].result == "polars" and r.run.result is None and not r.controller.ended
 
 
 # --- the end of the run ---------------------------------------------------------------------------------------
@@ -274,4 +274,4 @@ async def test_after_the_run_has_ended_a_call_is_not_run(run_node, run_dir):    
 
 async def test_the_model_stopping_ends_a_job_without_a_reply(run_node):                    # JOB-12
     r = await run_node("silent", {}, script=["I will not exit."])
-    assert r.result is None and await r.controller.stopped("I will not exit.") is None
+    assert r.run.result is None and await r.controller.stopped("I will not exit.") is None

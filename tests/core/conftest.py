@@ -1,15 +1,17 @@
 import shutil
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
 from agent_core.backends.scripted import ScriptedBackend
-from agent_core.contracts import Brief
-from agent_core.core.controller import VERB_SPECS, Controller, NodeRun
+from agent_core.contracts import Brief, ToolServerError
+from agent_core.core.controller import Controller, NodeRun
 from agent_core.core.instance import load_instance
+from agent_core.core.node_runner import NodeRunner
+from agent_core.core.record import NodeRunNote
 from agent_core.core.settings import load_settings
-from agent_core.core.state import HarnessState, Slot
 from agent_core.core.templates import render
 from agent_core.person.nobody import Nobody
 from agent_core.resources.folder import FolderResources
@@ -112,11 +114,18 @@ def run_dir(tmp_path, monkeypatch):
 
 @dataclass
 class Ran:
-    """What `run_node` returns: the controller's work, as the run left it."""
+    """What `run_node` returns: what `NodeRunner.run` gave, and the work of the controller behind it.
 
-    run: NodeRun
-    brief: Brief
-    controller: Controller
+    `result` is the dict `run` returned (None when it raised); `run.result` is what the controller itself ended with.
+    `run`, `brief` and `controller` are None when no driver was called.
+    """
+
+    run: NodeRun | None
+    brief: Brief | None
+    controller: Controller | None
+    result: dict | None
+    note: NodeRunNote | None
+    fault: Exception | None
 
     def __getattr__(self, name):
         return getattr(self.run, name)
@@ -126,37 +135,63 @@ class Ran:
         return self.run.slot.rejections
 
 
-@pytest.fixture
-def run_node(instance, run_dir):
-    """Run one node of the fixture instance through a driver and the controller, with real tools."""
+class Capture:
+    """Wraps a driver to keep the brief and the controller it was given; seeds the session facts the test names."""
 
-    async def run(node_name, inputs, script=None, *, driver=None, person=None, label=None, session=None):
-        node = instance.nodes[node_name]
-        settings = load_settings(instance, [FIXTURE / "config" / "alpha.yaml"])
+    def __init__(self, driver, session):
+        self.driver, self.session = driver, session
+        self.brief: Brief | None = None
+        self.controller: Controller | None = None
+
+    async def drive(self, brief, controller):
+        self.brief, self.controller = brief, controller
+        controller.run.state.session.update(self.session)  # after the brief: the facts only the calls of the run read
+        return await self.driver.drive(brief, controller)
+
+
+@pytest.fixture
+def open_runner(instance, run_dir):
+    """`open_runner()` is an async context manager giving a `NodeRunner` over the fixture's real tools.
+
+    `target` is an instance whose nodes are run (a copy edited by `broken`); the tools are always the fixture's.
+    """
+
+    @asynccontextmanager
+    async def open_it(*, person=None, notes=None, target=None):
+        target = target or instance
+        settings = load_settings(target, [FIXTURE / "config" / "alpha.yaml"])
         env = {"AGENT_CORE_INSTANCE": str(FIXTURE), "AGENT_CORE_RUN_DIR": str(run_dir)}
         sources = [FunctionSource(instance.functions, settings, FIXTURE), McpServerSource(instance.servers, env, FIXTURE)]
         try:
             tools = {spec.name: (source, spec) for source in sources for spec in await source.tools()}
-            state = HarnessState(session=dict(session or {}))
-            slot = state.node = Slot(node.name, dict(inputs), {}, {})
-            offered = ("exit", "ask", "state_set", "state_get", "load", *node.allowed_tools)
-            specs = {**{n: VERB_SPECS[n] for n in offered[:5]}, **{n: tools[n][1] for n in node.allowed_tools}}
-            brief = Brief(
-                instructions=f"# Procedure of the node that is running: `{node.name}`\n",
-                tools=tuple(specs.values()),
-                handover=(),
-                opening="Run the node.",
+            yield NodeRunner(
+                target, settings, tools, frozenset(instance.functions), person or Nobody(),
+                FolderResources(target.root), notes if notes is not None else [],
             )
-            node_run = NodeRun(
-                node=node, slot=slot, state=state, offered=frozenset(offered), tools=tools,
-                functions=frozenset(instance.functions), person=person or Nobody(),
-                resources=FolderResources(FIXTURE), job=True, label=label or f"{node.name}#1", record=[], usage=[],
-            )
-            controller = Controller(node_run)
-            await (driver or ScriptedBackend(script=script)).drive(brief, controller)
-            return Ran(node_run, brief, controller)
         finally:
             for source in sources:
                 await source.close()
+
+    return open_it
+
+
+@pytest.fixture
+def run_node(open_runner):
+    """Run one node of the fixture instance through `NodeRunner.run`, with real tools. A dead tool server is kept as `fault`."""
+
+    async def run(node_name, inputs, script=None, *, driver=None, person=None, label=None, session=None, target=None):
+        notes: list[NodeRunNote] = []
+        async with open_runner(person=person, notes=notes, target=target) as runner:
+            capture = Capture(driver or ScriptedBackend(script=script), session or {})
+            result, fault = None, None
+            try:
+                result = await runner.run(node_name, inputs, driver=capture, label=label or f"{node_name}#1")
+            except ToolServerError as e:
+                fault = e
+            controller = capture.controller
+            return Ran(
+                controller.run if controller else None, capture.brief, controller, result,
+                notes[-1] if notes else None, fault,
+            )
 
     return run
