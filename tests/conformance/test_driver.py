@@ -202,4 +202,6 @@ async def test_cache_counts_are_numbers_or_none(driver, wire, controller, instru
     for response in controller.responses:
         for count in (response.sent, response.cache_read, response.cache_written):
             assert count is None or (isinstance(count, int) and count >= 0)
-    assert (controller.responses[0].cache_written or 0) > 0
+    first = controller.responses[0]
+    # A first request is sometimes served as a cache read on this provider (observed: sent=10308, cache_read=10304, cache_written=0 despite a unique stamp).
+    assert (first.cache_read or 0) + (first.cache_written or 0) > 0
