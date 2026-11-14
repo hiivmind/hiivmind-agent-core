@@ -14,9 +14,13 @@ def files(layer):
 def imports(path) -> list[tuple[str, int]]:
     """(absolute module, relative level) of each import in the file."""
     rel = path.relative_to(SRC).with_suffix("")
-    package = list(rel.parts[:-1])
+    return imports_of(path.read_text(), list(rel.parts[:-1]))
+
+
+def imports_of(source: str, package: list[str]) -> list[tuple[str, int]]:
+    """Imports in source; from-imports also yield each qualified imported name."""
     out = []
-    for node in ast.walk(ast.parse(path.read_text())):
+    for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             out += [(a.name, 0) for a in node.names]
         elif isinstance(node, ast.ImportFrom):
@@ -24,12 +28,21 @@ def imports(path) -> list[tuple[str, int]]:
                 base = package[: len(package) - (node.level - 1)]
                 if node.module:
                     base = base + node.module.split(".")
-                    out.append((".".join(base), node.level))
-                else:
-                    out += [(".".join(base + [a.name]), node.level) for a in node.names]
             else:
-                out.append((node.module or "", 0))
+                base = (node.module or "").split(".") if node.module else []
+            if base:
+                out.append((".".join(base), node.level))
+            out += [(".".join(base + [a.name]), node.level) for a in node.names if a.name != "*"]
     return out
+
+
+def test_imports_see_qualified_from_import_names():
+    core = ["agent_core", "core"]
+    assert ("agent_core.tools", 0) in imports_of("from agent_core import tools", core)
+    assert ("agent_core.core", 0) in imports_of("from agent_core import core", ["agent_core", "tools"])
+    assert ("agent_core.tools", 2) in imports_of("from .. import tools", core)
+    assert ("agent_core.core.x", 2) in imports_of("from ..core import x", ["agent_core", "tools"])
+    assert ("langchain", 0) in imports_of("from langchain import x", core)
 
 
 def test_contracts_import_nothing_of_ours_and_no_sdk():  # LAYER-4

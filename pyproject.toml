@@ -30,7 +30,7 @@ packages = ["src/agent_core"]
 include = ["src/agent_core/**/*.py", "src/agent_core/assets/*.md", "src/agent_core/core/schemas/*.json"]
 
 [tool.uv.sources]
-mountainash-settings = { git = "file:///home/nathanielramm/git/mountainash-io/mountainash/mountainash-settings", rev = "7a4b43bf4789b43a808ca1520012fc413d221e64" }
+mountainash-settings = { git = "ssh://git@github.com/mountainash-io/mountainash-settings.git", rev = "7a4b43bf4789b43a808ca1520012fc413d221e64" }
 
 [tool.uv.workspace]
 members = ["packages/*"]

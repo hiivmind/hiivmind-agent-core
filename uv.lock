@@ -40,7 +40,7 @@ requires-dist = [
     { name = "langchain-anthropic", marker = "extra == 'langgraph'", specifier = ">=1.7,<2" },
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=1.2,<2" },
     { name = "mcp", specifier = ">=1.30,<2" },
-    { name = "mountainash-settings", git = "file:///home/nathanielramm/git/mountainash-io/mountainash/mountainash-settings?rev=7a4b43bf4789b43a808ca1520012fc413d221e64" },
+    { name = "mountainash-settings", git = "ssh://git@github.com/mountainash-io/mountainash-settings.git?rev=7a4b43bf4789b43a808ca1520012fc413d221e64" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyyaml" },
 ]
@@ -858,7 +858,7 @@ wheels = [
 [[package]]
 name = "mountainash-settings"
 version = "0.1.0"
-source = { git = "file:///home/nathanielramm/git/mountainash-io/mountainash/mountainash-settings?rev=7a4b43bf4789b43a808ca1520012fc413d221e64#7a4b43bf4789b43a808ca1520012fc413d221e64" }
+source = { git = "ssh://git@github.com/mountainash-io/mountainash-settings.git?rev=7a4b43bf4789b43a808ca1520012fc413d221e64#7a4b43bf4789b43a808ca1520012fc413d221e64" }
 dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
