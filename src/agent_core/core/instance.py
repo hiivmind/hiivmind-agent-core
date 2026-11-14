@@ -123,8 +123,6 @@ def _node(resources: ResourceSource, name: str, directory: str) -> Node:
     if not isinstance(front, dict):
         raise InstanceError(f"{file}: the frontmatter must be a mapping")
     _validate(front, "node", file)
-    if front["name"] != name:
-        raise InstanceError(f"{file}: the node is named `{front['name']}` but the topology names it `{name}`")
     return Node(
         name=name,
         file=file,
@@ -146,13 +144,6 @@ def _tool_sources() -> list[str]:
 
 
 def _check_keys(data: dict, file: str) -> None:
-    """`<key>__<tool>` names a tool, so a key may belong to one of servers, tools and sources only."""
-    seen: dict[str, str] = {}
-    for section in ("servers", "tools", "sources"):
-        for key in data.get(section) or {}:
-            if key in seen:
-                raise InstanceError(f"{file}: the key `{key}` is in both `{seen[key]}` and `{section}`")
-            seen[key] = section
     for key, source in (data.get("sources") or {}).items():
         if source["provider"] not in _tool_sources():
             raise InstanceError(

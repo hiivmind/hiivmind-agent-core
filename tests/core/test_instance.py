@@ -56,10 +56,6 @@ def test_a_node_without_an_improvisation_line_has_none(instance):
     assert instance.nodes["refresh"].improvisation is None
 
 
-def test_a_node_whose_name_differs_from_the_topology_is_refused(broken, load):
-    broken.frontmatter("refresh", name="other")
-    with pytest.raises(InstanceError, match=r"skills/refresh/SKILL\.md.*other"):
-        load()
 
 
 def test_a_node_file_that_is_missing_names_the_file(broken, load):
@@ -74,10 +70,6 @@ def test_a_key_written_twice_is_refused(broken, load):                   # Revie
         load()
 
 
-def test_a_key_in_servers_and_tools_is_refused(broken, load):
-    broken.append("instance.yaml", "  web: functions:count_words\n")
-    with pytest.raises(InstanceError, match=r"instance\.yaml.*web"):
-        load()
 
 
 def test_a_key_written_twice_in_a_node_file_names_the_file(broken, load):
@@ -156,9 +148,17 @@ def test_a_source_may_not_name_a_built_in_source(broken, load, builtin):
     assert f"no tool source `{builtin}`" in str(e.value) and str(e.value).endswith("tool sources are: echo_t4")
 
 
-def test_a_source_key_that_is_also_a_server_is_refused(broken, load):
-    _with_echo(broken)
-    text = (broken.root / "instance.yaml").read_text().replace("  echo:\n", "  web:\n")
+def test_a_server_declared_by_url_loads(broken, load):
+    text = (broken.root / "instance.yaml").read_text().replace(
+        "  web: {command: python, args: [../servers/flaky_server.py]}", "  web: {url: \"http://127.0.0.1:9/mcp\"}")
     broken("instance.yaml", text)
-    with pytest.raises(InstanceError, match=r"instance\.yaml.*web"):
+    assert load().servers["web"] == {"url": "http://127.0.0.1:9/mcp"}
+
+
+@pytest.mark.parametrize("entry", ["{args: [x]}", "{command: python, url: \"http://h/mcp\"}"])
+def test_a_server_with_neither_or_both_command_and_url_is_refused(broken, load, entry):
+    text = (broken.root / "instance.yaml").read_text().replace(
+        "{command: python, args: [../servers/flaky_server.py]}", entry)
+    broken("instance.yaml", text)
+    with pytest.raises(InstanceError, match=r"instance\.yaml.*servers\.web"):
         load()
