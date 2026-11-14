@@ -92,6 +92,8 @@ async def test_no_model_call_after_the_run_is_ended(driver, wire, controller, in
     assert end.by_controller
     assert controller.handled[-1].name == "exit"
     assert len(wire.requests) == len(controller.responses)
+    assert len(controller.responses) == 2  # the lookup, then the exit
+    assert controller.events[-1][0] == "handle" and controller.events[-1][1].name == "exit"  # nothing is reported after the end
 
 
 async def test_the_model_stopping_is_put_to_the_controller(driver, wire, controller, instructions, toy_tools):  # KIT-10
@@ -200,4 +202,4 @@ async def test_cache_counts_are_numbers_or_none(driver, wire, controller, instru
     for response in controller.responses:
         for count in (response.sent, response.cache_read, response.cache_written):
             assert count is None or (isinstance(count, int) and count >= 0)
-    assert controller.responses[0].cache_written > 0
+    assert (controller.responses[0].cache_written or 0) > 0

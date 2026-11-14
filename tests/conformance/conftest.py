@@ -94,7 +94,8 @@ class Wire:
 def wire(monkeypatch):
     import anthropic._base_client as base
 
-    http = getattr(base, "httpx2", None) or base.httpx  # the HTTP library the provider's SDK uses
+    # The SDK sends through `httpx2` in this environment, not `httpx`; patch the client class the SDK itself imported.
+    http = getattr(base, "httpx2", None) or base.httpx
     record = Wire()
     send = http.AsyncClient.send
 
