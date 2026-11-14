@@ -1,0 +1,42 @@
+[project]
+name = "agent-core"
+version = "0.1.0"
+description = "Harness that runs model-driven procedures for jobs"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "pyyaml",
+    "jsonschema",
+    "pydantic>=2",
+    "mcp>=1.30,<2",
+    "mountainash-settings",
+]
+
+[project.optional-dependencies]
+langgraph = ["langchain>=1.5,<2", "langgraph>=1.2,<2", "langchain-anthropic>=1.7,<2"]
+
+[project.scripts]
+agent-core = "agent_core.core.cli:main"
+
+[dependency-groups]
+dev = ["pytest", "pytest-asyncio"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_core"]
+include = ["src/agent_core/**/*.py", "src/agent_core/assets/*.md", "src/agent_core/core/schemas/*.json"]
+
+[tool.uv.sources]
+mountainash-settings = { git = "file:///home/nathanielramm/git/mountainash-io/mountainash/mountainash-settings", rev = "7a4b43bf4789b43a808ca1520012fc413d221e64" }
+
+[tool.uv.workspace]
+members = ["packages/*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+markers = ["model: calls a model provider and costs money"]
+addopts = "-m 'not model'"
