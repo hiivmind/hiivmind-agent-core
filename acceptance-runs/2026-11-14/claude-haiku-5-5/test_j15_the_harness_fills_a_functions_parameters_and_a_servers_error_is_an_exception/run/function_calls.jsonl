@@ -1,3 +1,0 @@
-{"ts": 1794651999.535363, "pid": 3640448, "tool": "locate", "args": {"source": "ibis", "corpus_path": "/tmp/spike-corpus-alpha", "state": {}}}
-{"ts": 1794651999.5360537, "pid": 3640448, "tool": "locate", "args": {"source": "narwhals", "corpus_path": "/tmp/spike-corpus-alpha", "state": {}}}
-{"ts": 1794652004.791351, "pid": 3640448, "tool": "locate", "args": {"source": "polars", "corpus_path": "/tmp/spike-corpus-alpha", "state": {"phase": "looking", "source": "polars"}}}

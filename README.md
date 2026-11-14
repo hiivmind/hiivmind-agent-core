@@ -65,9 +65,19 @@ Tests marked `model` do not run by default. The two model suites use the model i
 
 ### Acceptance runs
 
-The acceptance suite, `tests/acceptance/test_job_criteria.py`, runs `agent-core job --backend langgraph` on the fixture instance with a real model. It carries the marker `model`, so it does not run by default (command above). Its run directories (each with the provider trace `trace.jsonl` and the run record `record.json`) are kept under `acceptance-runs/<date>/<model>/<test>/`.
+The acceptance suite, `tests/acceptance/test_job_criteria.py`, runs `agent-core job --backend langgraph` on the fixture instance with a real model. It carries the marker `model`, so it does not run by default (command above). Its run directories (each with the provider trace `trace.jsonl` and the run record `record.json`) are written to `acceptance-runs/<date>/<model>/<test>/` and are not committed.
 
-Results of 2026-11-14, 28 tests each:
+Results, all of 2026-11-14:
+
+| Date | Model | Suite | Result |
+|---|---|---|---|
+| 2026-11-14 | `claude-haiku-5-5` | acceptance, first run | 27 of 28 passed (`j3` failed) |
+| 2026-11-14 | `claude-haiku-5-5` | acceptance, after the `shape` node change | 28 of 28 passed |
+| 2026-11-14 | `claude-sonnet-5-5` | acceptance, before the `ENGINE.md` change | 28 of 28 passed |
+| 2026-11-14 | `claude-haiku-5-5` | conformance, after the final review's fixes | 11 of 11 passed |
+| 2026-11-14 | `claude-haiku-5-5` | acceptance, after the final review's fixes | 28 of 28 passed |
+
+Details, 28 tests each:
 
 - `claude-haiku-5-5`: first run 27 passed, 1 failed (`j3`: after the output of the wrong shape was sent back once, the model asked the person instead of correcting it; the node file `shape` now says not to). After that change, 28 passed, none skipped as "not exercised".
 - `claude-sonnet-5-5` (the pass bar): 28 passed, none skipped as "not exercised". Criteria covered: 1, 3 (a) to (g), 12, 14 (job), 17 (job), 20, 21 (job), 22 (job).

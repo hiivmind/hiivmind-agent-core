@@ -1,4 +1,0 @@
-{"ts": 1794648460.8287709, "server_pid": 3607650, "tool": "shell", "args": {"command": "echo checked alpha"}}
-{"ts": 1794648460.923197, "server_pid": 3607650, "tool": "shell", "args": {"command": "echo checked alpha"}}
-{"ts": 1794648463.8263245, "server_pid": 3607650, "tool": "shell", "args": {"command": "echo updating polars"}}
-{"ts": 1794648464.6395779, "server_pid": 3607650, "tool": "shell", "args": {"command": "echo updating ibis"}}

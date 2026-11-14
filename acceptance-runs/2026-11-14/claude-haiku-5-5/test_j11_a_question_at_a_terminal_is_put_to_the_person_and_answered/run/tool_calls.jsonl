@@ -1,2 +1,0 @@
-{"ts": 1794651931.687783, "server_pid": 3639884, "tool": "shell", "args": {"command": "echo checked alpha"}}
-{"ts": 1794651935.7142935, "server_pid": 3639884, "tool": "shell", "args": {"command": "echo updating polars"}}
