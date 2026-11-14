@@ -4,6 +4,8 @@ from pathlib import Path
 import pytest
 
 from agent_core.core.instance import load_instance
+from agent_core.core.settings import load_settings
+from agent_core.core.templates import render
 from agent_core.resources.folder import FolderResources
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "instance"
@@ -53,3 +55,33 @@ def load(broken):
         return load_instance(broken.root / "instance.yaml", FolderResources(broken.root))
 
     return load_copy
+
+
+@pytest.fixture
+def render_text(instance):
+    """Render `text` against the fixture instance; the settings are the fixture's with `alpha.yaml` layered over."""
+    settings = load_settings(instance, [instance.root / "config" / "alpha.yaml"])
+
+    def render_it(text, *, file="skills/example/SKILL.md", inputs=None, session=None, values=None):
+        return render(
+            text,
+            file=file,
+            settings=settings,
+            inputs=inputs or {},
+            session=session or {},
+            values=values or {},
+            resources=FolderResources(instance.root),
+        )
+
+    return render_it
+
+
+@pytest.fixture
+def render_refresh(instance, render_text):
+    """Render the body of the fixture's `refresh` node."""
+    node = instance.nodes["refresh"]
+
+    def render_node(**kwargs):
+        return render_text(node.body, file=node.file, **kwargs)
+
+    return render_node
