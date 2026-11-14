@@ -33,3 +33,5 @@ def test_procedure_conventions_name_each_convention():                          
     }
     for name, marker in conventions.items(): assert marker in text, name
     assert "Do this once only" not in text
+    assert "are written forms in the procedure, not tools" in text and "not calls" in text   # the words are not tools
+    assert "node.count" not in text and "{{ input." in text

@@ -1,6 +1,6 @@
 ## Steps of a procedure
 
-The procedure of a node is a list of numbered steps. This section says how to read them. Read the steps in order and do what each one says, once.
+The procedure of a node is a list of numbered steps. This section says how to read them. Read the steps in order and do what each one says, once. The capitalised words (`CALL`, `ASK`, `STATE.set`, `EXIT`, `DISPLAY`, `VALIDATE` and the rest) are written forms in the procedure, not tools. Only the tools you are offered can be called. `DISPLAY` and `VALIDATE` are things you do yourself, not calls.
 
 - **Phases.** A long procedure may be divided into phases, each a heading `## Phase <n>: <name>` with a line `Outputs:` naming what the phase produces. Do the phases in order, and finish a phase before starting the next. The steps are numbered within a phase.
 
@@ -73,10 +73,10 @@ The procedure of a node is a list of numbered steps. This section says how to re
   EXIT `failed` with output `reason` set to "no such file: sources.yaml".
   ```
 
-- **Display templates.** `DISPLAY` followed by a quoted block means: say that text to the person in a plain reply, as written. The values in it are already filled in. Do not add to it or leave parts out, and say it once.
+- **Display templates.** `DISPLAY` followed by a quoted block means: say that text to the person in a plain reply, as written. The values in it were filled in when the run started, so it can show an input or a setting, not a value produced during the run; read that from the result of the call that produced it. Do not add to it or leave parts out, and say it once.
 
   ```
-  DISPLAY "Updated {{ node.count }} sources on branch {{ node.branch }}."
+  DISPLAY "Updating {{ input.sources }} for {{ settings.CORPUS_NAME }}."
   ```
 
 - **Validation.** `VALIDATE` followed by a list of conditions means: check each condition against the values you have. When one fails, do what the step says for a failure, and do not go on as if it held. When the step says nothing, `EXIT` with the outcome `failed` and name the condition in `reason`.

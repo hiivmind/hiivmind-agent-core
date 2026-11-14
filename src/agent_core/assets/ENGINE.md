@@ -17,7 +17,7 @@ Rules for calls:
 
 ## Instance slots
 
-An instance gives the harness content only through these slots. You cannot change a slot, and you act on only what a slot's text says.
+The slots are the engine's places for the instance's own text. You cannot change a slot, and you act on only what a slot's text says.
 
 - `TOPOLOGY` (`topology.yaml`): the instance's nodes and what follows each outcome. It is required. The harness reads it; you are not shown it in a job run.
 - `POLICY` (`POLICY.md`): the instance's standing rules. It is required, and it is shown to you after these rules and before the procedure. Follow it in every node.
