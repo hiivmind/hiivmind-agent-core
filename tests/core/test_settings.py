@@ -1,3 +1,5 @@
+import sys
+import types
 from dataclasses import replace
 
 import pytest
@@ -37,3 +39,27 @@ def test_the_error_names_every_missing_field_and_no_value(instance, monkeypatch)
         load_settings(instance)
     assert "CORPUS_REPO" in str(e.value)
     assert "secret" not in str(e.value) and "CORPUS_NAME" not in str(e.value)
+
+
+def test_two_instances_each_get_their_own_settings_class_in_any_order(instance, tmp_path):
+    def instance_with_class(name):
+        root = tmp_path / name
+        root.mkdir()
+        (root / "settings.py").write_text(f"class Mine:\n    owner = {name!r}\n    def __init__(self, **kwargs): pass\n")
+        return replace(instance, root=root, settings={"class": "settings.Mine", "files": []})
+
+    a, b = instance_with_class("a"), instance_with_class("b")
+    assert [load_settings(i).owner for i in (a, b, a)] == ["a", "b", "a"]
+
+
+def test_loading_settings_leaves_other_modules_and_the_path_alone(instance, monkeypatch):
+    before = list(sys.path)
+    other = types.ModuleType("settings")
+    monkeypatch.setitem(sys.modules, "settings", other)     # somebody else's `settings`
+    load_settings(instance, [instance.root / "config" / "alpha.yaml"])
+    assert sys.path == before and sys.modules["settings"] is other
+
+
+def test_a_class_value_without_a_dot_is_a_settings_error_naming_it(instance):
+    with pytest.raises(SettingsError, match="MySettings"):
+        load_settings(replace(instance, settings={"class": "MySettings", "files": []}))

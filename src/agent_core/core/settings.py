@@ -1,6 +1,7 @@
 """The instance's settings object, built by the settings class the instance names."""
 
-import importlib
+import hashlib
+import importlib.util
 import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -15,14 +16,23 @@ class SettingsError(ValueError):
 
 
 def _settings_class(instance: Instance, spec: str):
-    module_name, _, class_name = spec.rpartition(".")
-    root = str(instance.root)
-    if root not in sys.path:
-        sys.path.insert(0, root)
-    loaded = sys.modules.get(module_name)
-    if loaded is not None and not str(getattr(loaded, "__file__", "")).startswith(root):
-        del sys.modules[module_name]            # another instance's module of the same name
-    return getattr(importlib.import_module(module_name), class_name)
+    module_path, dot, class_name = spec.rpartition(".")
+    if not dot:
+        raise SettingsError(f"settings.class `{spec}` must be `module.Class`, e.g. `settings.MySettings`")
+    root = instance.root.resolve()
+    file = root.joinpath(*module_path.split(".")).with_suffix(".py")
+    name = f"_agent_core_instance_{hashlib.sha256(str(root).encode()).hexdigest()[:16]}_{module_path.replace('.', '_')}"
+    module = sys.modules.get(name)
+    if module is None:
+        module_spec = importlib.util.spec_from_file_location(name, file)
+        module = importlib.util.module_from_spec(module_spec)
+        sys.modules[name] = module
+        try:
+            module_spec.loader.exec_module(module)
+        except BaseException:
+            del sys.modules[name]
+            raise
+    return getattr(module, class_name)
 
 
 def load_settings(
