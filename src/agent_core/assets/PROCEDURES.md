@@ -2,6 +2,14 @@
 
 The procedure of a node is a list of numbered steps. This section says how to read them. Read the steps in order and do what each one says, once.
 
+- **Phases.** A long procedure may be divided into phases, each a heading `## Phase <n>: <name>` with a line `Outputs:` naming what the phase produces. Do the phases in order, and finish a phase before starting the next. The steps are numbered within a phase.
+
+  ```
+  ## Phase 2: Update
+  Outputs: `sources_updated`
+  1. CALL `tools__shell` with the command `echo updating`.
+  ```
+
 - **Steps.** Each numbered step is one action. Do the steps in order, one after another. A step that names a tool is a call to that tool with the arguments the step gives. A step that carries a condition ("If ...") is done only when the condition holds.
 
   ```
@@ -10,7 +18,7 @@ The procedure of a node is a list of numbered steps. This section says how to re
   3. EXIT `done`.
   ```
 
-- **CALL.** `CALL <tool>` means call that tool, which the node declares. `Do this once only` means exactly that: when the conversation already shows the call and its result, the step is done.
+- **CALL.** `CALL <tool>` means call that tool, which the node declares. A step is done once: when the conversation already shows the call and its result, do not call it again.
 
   ```
   CALL `tools__shell` with the command `echo updating` followed by the sources.
@@ -36,7 +44,12 @@ The procedure of a node is a list of numbered steps. This section says how to re
   EXIT `failed` with output `reason` saying what went wrong.
   ```
 
-- **ASK and EXIT stand alone.** Never put `ask` or `exit` in one response with another call. Finish the other calls first, read their results, and then send it.
+- **ASK, ENTER and EXIT stand alone.** Never put `ask`, `enter` or `exit` in one response with another call. Finish the other calls first, read their results, and then send it. `ENTER <node>` calls `enter` to start another node; a job's node is not offered it, so a procedure run as a job has no such step.
+
+  ```
+  Not allowed: a `state_set` call and an `exit` call in the same response.
+  Do: `state_set` first, read its result, then `exit` alone.
+  ```
 
 - **Go to step.** `go to step <n>` means carry on from step `<n>` and not from the next one, then go on in order from there. Steps between are skipped. A step is carried out twice only when a `go to step` sends you back to it.
 
@@ -58,4 +71,25 @@ The procedure of a node is a list of numbered steps. This section says how to re
   ```
   error: no such file: sources.yaml
   EXIT `failed` with output `reason` set to "no such file: sources.yaml".
+  ```
+
+- **Display templates.** `DISPLAY` followed by a quoted block means: say that text to the person in a plain reply, as written. The values in it are already filled in. Do not add to it or leave parts out, and say it once.
+
+  ```
+  DISPLAY "Updated {{ node.count }} sources on branch {{ node.branch }}."
+  ```
+
+- **Validation.** `VALIDATE` followed by a list of conditions means: check each condition against the values you have. When one fails, do what the step says for a failure, and do not go on as if it held. When the step says nothing, `EXIT` with the outcome `failed` and name the condition in `reason`.
+
+  ```
+  VALIDATE: "Sources to update" is not "not given"; "Branch" is not empty.
+  If a condition fails, EXIT `failed` with output `reason` naming it.
+  ```
+
+- **Error tables.** A procedure may end with an error table of the columns Error and Behaviour. When a call returns an error result, or a condition of a row holds, do what that row's Behaviour says and nothing else. A situation that has no row is handled as a tool that reports an error, above.
+
+  ```
+  | Error | Behaviour |
+  |-------|-----------|
+  | `error: no such file` | EXIT `failed` with output `reason` set to the error. |
   ```

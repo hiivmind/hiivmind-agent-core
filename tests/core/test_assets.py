@@ -15,6 +15,21 @@ def test_engine_document_keeps_to_what_step_1a_runs():                          
     assert text.index("# Engine rules") < text.index("## Inside a node")
 
 
+def test_engine_document_lists_each_instance_slot_and_what_an_absent_one_means():           # ENG-8
+    text = files("agent_core.assets").joinpath("ENGINE.md").read_text()
+    slots = text[text.index("## Instance slots"):text.index("## Inside a node")]
+    for slot in ("TOPOLOGY", "POLICY", "IMPROVISATION", "ROUTING_GUIDE", "CONFIRM"): assert f"`{slot}`" in slots
+    for optional in ("IMPROVISATION", "ROUTING_GUIDE", "CONFIRM"):
+        line = next(l for l in slots.splitlines() if f"`{optional}`" in l)
+        assert "absent" in line, optional
+
+
 def test_procedure_conventions_name_each_convention():                                     # ENG-9a
     text = files("agent_core.assets").joinpath("PROCEDURES.md").read_text()
-    for word in ("steps", "ASK", "EXIT", "alone", "go to step", "not given", "error"): assert word in text
+    conventions = {
+        "phases": "## Phase", "steps": "numbered steps", "verb calls": "**CALL.**", "ASK alone": "ASK, ENTER and EXIT stand alone",
+        "ENTER": "`ENTER <node>`", "EXIT": "**EXIT.**", "conditionals": "If ...", "go to step": "go to step",
+        "display templates": "DISPLAY", "validation": "VALIDATE", "error tables": "error table", "inputs not given": "not given",
+    }
+    for name, marker in conventions.items(): assert marker in text, name
+    assert "Do this once only" not in text

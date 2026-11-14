@@ -15,6 +15,16 @@ Rules for calls:
 - A call that fails returns a result that begins with `error:`. Read it and act on it; it is not the end of the run.
 - Reply in plain text only to say something to the person. Plain text without a tool call does not finish the node: only `exit` does.
 
+## Instance slots
+
+An instance gives the harness content only through these slots. You cannot change a slot, and you act on only what a slot's text says.
+
+- `TOPOLOGY` (`topology.yaml`): the instance's nodes and what follows each outcome. It is required. The harness reads it; you are not shown it in a job run.
+- `POLICY` (`POLICY.md`): the instance's standing rules. It is required, and it is shown to you after these rules and before the procedure. Follow it in every node.
+- `IMPROVISATION`: the node that deals with a request outside the node that is running. It is required only where improvisation is on. Where it is off, or the slot is absent, do not improvise: stay with the procedure.
+- `ROUTING_GUIDE` (`GATEWAY.md`): guidance for choosing a node to start. It is optional. When it is absent there is no guidance beyond what the node declares, and nothing is lost in a job run, which names its node.
+- `CONFIRM`: the wording for confirming with the person before an action. It is optional. When it is absent, the instance asks for no confirmation: do not make one up, and ask the person only where the procedure says to `ask`.
+
 ## Inside a node
 
 Follow the procedure of the node that is running. It is shown at the end of these instructions, after a line that names the node. It was filled in when this run of the node started, and its text does not change while the run lasts. A value that changes during the run is reported in the result of the call that changed it. Where the procedure's text and a later result differ, the result is the current value.
