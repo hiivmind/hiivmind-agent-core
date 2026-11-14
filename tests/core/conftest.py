@@ -85,3 +85,9 @@ def render_refresh(instance, render_text):
         return render_text(node.body, file=node.file, **kwargs)
 
     return render_node
+
+
+@pytest.fixture
+def refresh_node(instance):
+    """The fixture's `refresh` node: input `sources`; outputs `sources_updated` and `branch`."""
+    return instance.nodes["refresh"]
