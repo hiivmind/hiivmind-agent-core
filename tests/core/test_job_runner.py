@@ -35,7 +35,8 @@ def test_a_job_that_needs_no_model_exits_zero(job):                             
 def test_the_record_has_what_the_job_did(job):                                            # JOB-9a, SCOPE-7
     code, record = job("refresh_given", params={"CORPUS_NAME": "alpha"})
     assert code == 0 and set(record) == RECORD_KEYS
-    assert (record["job"], record["status"], record["summary"]) == ("refresh_given", "ok", "refresh done")
+    assert (record["job"], record["status"]) == ("refresh_given", "ok")
+    assert [r["outcome"] for r in record["summary"]["returned"]] == ["done"]
     assert (record["params"], record["settings_files"]) == ({"CORPUS_NAME": "alpha"}, [str(ALPHA)])
     assert (record["backend"], record["attended"], record["failures"]) == ("scripted", False, [])
     assert record["start"] <= record["end"] and record["start"].endswith("+00:00")
@@ -55,7 +56,9 @@ def test_a_script_that_raises_fails_the_job(job):                               
 def test_a_failed_node_does_not_fail_the_job_by_itself(job):
     code, record = job("refresh_missing", case="missing")
     assert code == 0 and [f["reason"] for f in record["failures"]] == ["needs_input"]
-    assert record["status"] == "ok" and record["summary"] == "needs attention: Which sources should I update?"
+    assert record["status"] == "ok"
+    [result] = record["summary"]["returned"]
+    assert (result["reason"], result["question"]) == ("needs_input", "Which sources should I update?")
 
 
 def test_two_nodes_at_once_each_from_fresh_facts(job):                                     # criterion 12, JOB-8

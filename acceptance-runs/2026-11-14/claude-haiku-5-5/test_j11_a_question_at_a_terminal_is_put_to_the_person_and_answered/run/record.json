@@ -1,0 +1,66 @@
+{
+  "job": "refresh_missing",
+  "params": {},
+  "settings_files": [
+    "/home/nathanielramm/git/hiivmind/hiivmind-agent-core/tests/fixtures/instance/config/alpha.yaml"
+  ],
+  "backend": "langgraph",
+  "attended": true,
+  "start": "2026-11-14T09:23:59+00:00",
+  "end": "2026-11-14T09:24:05+00:00",
+  "status": "ok",
+  "summary": {
+    "returned": [
+      {
+        "outcome": "done",
+        "outputs": {
+          "branch": "refresh/alpha",
+          "sources_updated": "polars"
+        }
+      }
+    ]
+  },
+  "failures": [],
+  "model_calls": 6,
+  "runs": [
+    {
+      "label": "refresh#1",
+      "node": "refresh",
+      "parts": [
+        [
+          "engine: rules",
+          1189
+        ],
+        [
+          "engine: inside a node",
+          1874
+        ],
+        [
+          "procedure conventions",
+          3055
+        ],
+        [
+          "policy",
+          105
+        ],
+        [
+          "node file: skills/refresh/SKILL.md",
+          769
+        ]
+      ],
+      "tools": [
+        "exit",
+        "ask",
+        "state_set",
+        "state_get",
+        "load",
+        "tools__shell"
+      ],
+      "handover": [],
+      "model_calls": 6,
+      "tokens_sent": 20287,
+      "cache_read": 19916,
+      "cache_written": 357
+    }
+  ]
+}

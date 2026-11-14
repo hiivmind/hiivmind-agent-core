@@ -1,0 +1,2 @@
+{"ts": 1794648201.9464417, "server_pid": 3604853, "tool": "shell", "args": {"command": "test -f alpha.ready"}}
+{"ts": 1794648203.116604, "server_pid": 3604853, "tool": "shell", "args": {"command": "echo gated-work"}}

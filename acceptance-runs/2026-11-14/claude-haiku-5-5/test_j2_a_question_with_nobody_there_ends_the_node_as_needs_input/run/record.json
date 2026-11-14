@@ -1,0 +1,73 @@
+{
+  "job": "refresh_missing",
+  "params": {},
+  "settings_files": [
+    "/home/nathanielramm/git/hiivmind/hiivmind-agent-core/tests/fixtures/instance/config/alpha.yaml"
+  ],
+  "backend": "langgraph",
+  "attended": false,
+  "start": "2026-11-14T09:22:12+00:00",
+  "end": "2026-11-14T09:22:15+00:00",
+  "status": "ok",
+  "summary": {
+    "returned": [
+      {
+        "outcome": "failed",
+        "reason": "needs_input",
+        "question": "Which sources should I update?",
+        "outputs": {}
+      }
+    ]
+  },
+  "failures": [
+    {
+      "node": "refresh",
+      "outcome": "failed",
+      "reason": "needs_input",
+      "question": "Which sources should I update?",
+      "outputs": {}
+    }
+  ],
+  "model_calls": 2,
+  "runs": [
+    {
+      "label": "refresh#1",
+      "node": "refresh",
+      "parts": [
+        [
+          "engine: rules",
+          1189
+        ],
+        [
+          "engine: inside a node",
+          1874
+        ],
+        [
+          "procedure conventions",
+          3055
+        ],
+        [
+          "policy",
+          105
+        ],
+        [
+          "node file: skills/refresh/SKILL.md",
+          769
+        ]
+      ],
+      "tools": [
+        "exit",
+        "ask",
+        "state_set",
+        "state_get",
+        "load",
+        "tools__shell"
+      ],
+      "handover": [],
+      "model_calls": 2,
+      "tokens_sent": 6406,
+      "cache_read": 6400,
+      "cache_written": 0
+    }
+  ]
+}

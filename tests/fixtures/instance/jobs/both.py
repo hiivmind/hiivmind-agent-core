@@ -6,4 +6,4 @@ async def main(job):
         job.run_node("refresh", {"sources": "polars"}),
         job.run_node("refresh", {"sources": "ibis"}),
     )
-    return f"refresh {first['outcome']} and {second['outcome']}"
+    return {"returned": [first, second]}

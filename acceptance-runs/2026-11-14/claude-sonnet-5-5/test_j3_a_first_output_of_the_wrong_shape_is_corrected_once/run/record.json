@@ -1,0 +1,65 @@
+{
+  "job": "shape",
+  "params": {},
+  "settings_files": [
+    "/home/nathanielramm/git/hiivmind/hiivmind-agent-core/tests/fixtures/instance/config/alpha.yaml"
+  ],
+  "backend": "langgraph",
+  "attended": false,
+  "start": "2026-11-14T09:27:17+00:00",
+  "end": "2026-11-14T09:27:22+00:00",
+  "status": "ok",
+  "summary": {
+    "returned": [
+      {
+        "outcome": "done",
+        "outputs": {
+          "count": 3
+        }
+      }
+    ]
+  },
+  "failures": [],
+  "model_calls": 3,
+  "runs": [
+    {
+      "label": "shape#1",
+      "node": "shape",
+      "parts": [
+        [
+          "engine: rules",
+          1189
+        ],
+        [
+          "engine: inside a node",
+          1874
+        ],
+        [
+          "procedure conventions",
+          3055
+        ],
+        [
+          "policy",
+          105
+        ],
+        [
+          "node file: skills/shape/SKILL.md",
+          415
+        ]
+      ],
+      "tools": [
+        "exit",
+        "ask",
+        "state_set",
+        "state_get",
+        "load",
+        "tools__shell"
+      ],
+      "handover": [],
+      "model_calls": 3,
+      "tokens_sent": 9318,
+      "cache_read": 6803,
+      "cache_written": 2507
+    }
+  ]
+}

@@ -99,7 +99,7 @@ def test_the_command_has_the_job_subcommand_only():
 def test_a_question_at_a_terminal_is_put_with_its_label_and_answered(pty_job):             # criterion 20
     out, record = pty_job("refresh_missing", typed="polars")
     assert "[refresh#1] Which sources should I update?" in out and record["failures"] == []
-    assert record["attended"] is True and record["summary"] == "refresh done"
+    assert record["attended"] is True and [r["outcome"] for r in record["summary"]["returned"]] == ["done"]
 
 
 def test_no_ask_returns_needs_input_even_at_a_terminal(pty_job):

@@ -1,0 +1,2 @@
+{"ts": 1794648230.635039, "server_pid": 3605178, "tool": "ready", "args": {"name": "alpha"}}
+{"ts": 1794648231.8903296, "server_pid": 3605178, "tool": "shell", "args": {"command": "echo gated-srv-work"}}

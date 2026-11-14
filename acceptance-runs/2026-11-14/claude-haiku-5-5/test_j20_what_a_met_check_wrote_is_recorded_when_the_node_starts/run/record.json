@@ -1,0 +1,78 @@
+{
+  "job": "gated_rec",
+  "params": {},
+  "settings_files": [
+    "/home/nathanielramm/git/hiivmind/hiivmind-agent-core/tests/fixtures/instance/config/alpha.yaml"
+  ],
+  "backend": "langgraph",
+  "attended": false,
+  "start": "2026-11-14T09:25:30+00:00",
+  "end": "2026-11-14T09:25:32+00:00",
+  "status": "ok",
+  "summary": {
+    "returned": [
+      {
+        "outcome": "done",
+        "outputs": {
+          "stamp": "ready-alpha"
+        }
+      },
+      {
+        "outcome": "failed",
+        "reason": "precondition_unmet",
+        "message": "The corpus alpha is not stamped.",
+        "outputs": {}
+      }
+    ]
+  },
+  "failures": [
+    {
+      "node": "gated_norec",
+      "outcome": "failed",
+      "reason": "precondition_unmet",
+      "message": "The corpus alpha is not stamped.",
+      "outputs": {}
+    }
+  ],
+  "model_calls": 1,
+  "runs": [
+    {
+      "label": "gated_rec#1",
+      "node": "gated_rec",
+      "parts": [
+        [
+          "engine: rules",
+          1189
+        ],
+        [
+          "engine: inside a node",
+          1874
+        ],
+        [
+          "procedure conventions",
+          3055
+        ],
+        [
+          "policy",
+          105
+        ],
+        [
+          "node file: skills/gated_rec/SKILL.md",
+          293
+        ]
+      ],
+      "tools": [
+        "exit",
+        "ask",
+        "state_set",
+        "state_get",
+        "load"
+      ],
+      "handover": [],
+      "model_calls": 1,
+      "tokens_sent": 2884,
+      "cache_read": 2880,
+      "cache_written": 0
+    }
+  ]
+}

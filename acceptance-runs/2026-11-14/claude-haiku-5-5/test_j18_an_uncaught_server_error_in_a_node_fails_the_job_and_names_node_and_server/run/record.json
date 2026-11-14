@@ -1,0 +1,61 @@
+{
+  "job": "fetch_down",
+  "params": {},
+  "settings_files": [
+    "/home/nathanielramm/git/hiivmind/hiivmind-agent-core/tests/fixtures/instance/config/alpha.yaml"
+  ],
+  "backend": "langgraph",
+  "attended": false,
+  "start": "2026-11-14T09:25:44+00:00",
+  "end": "2026-11-14T09:25:45+00:00",
+  "status": "failed",
+  "summary": "ToolServerError: tool server \"web\" stopped answering during `fetch`",
+  "failures": [
+    {
+      "node": "fetcher",
+      "error": "ToolServerError: tool server \"web\" stopped answering during `fetch`"
+    }
+  ],
+  "model_calls": 1,
+  "runs": [
+    {
+      "label": "fetcher#1",
+      "node": "fetcher",
+      "parts": [
+        [
+          "engine: rules",
+          1189
+        ],
+        [
+          "engine: inside a node",
+          1874
+        ],
+        [
+          "procedure conventions",
+          3055
+        ],
+        [
+          "policy",
+          105
+        ],
+        [
+          "node file: skills/fetcher/SKILL.md",
+          354
+        ]
+      ],
+      "tools": [
+        "exit",
+        "ask",
+        "state_set",
+        "state_get",
+        "load",
+        "web__fetch"
+      ],
+      "handover": [],
+      "model_calls": 1,
+      "tokens_sent": 2988,
+      "cache_read": 2984,
+      "cache_written": 0
+    }
+  ]
+}

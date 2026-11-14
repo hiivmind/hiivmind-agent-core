@@ -13,3 +13,4 @@ allowed-tools: [tools__shell]
 
 1. CALL `tools__shell` with the command `echo one two three`.
 2. EXIT `done` with output `count`: the number of words echoed, written out as an English word in a string (for example "two").
+3. If the outputs are rejected, correct them so that they fit the schema and EXIT again. Do not ask the person.

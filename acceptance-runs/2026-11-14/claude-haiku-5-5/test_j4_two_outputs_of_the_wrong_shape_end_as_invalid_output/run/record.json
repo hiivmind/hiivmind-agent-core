@@ -1,0 +1,66 @@
+{
+  "job": "stuck",
+  "params": {},
+  "settings_files": [
+    "/home/nathanielramm/git/hiivmind/hiivmind-agent-core/tests/fixtures/instance/config/alpha.yaml"
+  ],
+  "backend": "langgraph",
+  "attended": false,
+  "start": "2026-11-14T09:22:29+00:00",
+  "end": "2026-11-14T09:22:33+00:00",
+  "status": "failed",
+  "summary": "RuntimeError: stuck failed: invalid_output",
+  "failures": [
+    {
+      "node": "stuck",
+      "outcome": "failed",
+      "reason": "invalid_output",
+      "errors": [
+        "code: 8 is less than the minimum of 10",
+        "code: 8 is greater than the maximum of 5"
+      ],
+      "outputs": {}
+    }
+  ],
+  "model_calls": 2,
+  "runs": [
+    {
+      "label": "stuck#1",
+      "node": "stuck",
+      "parts": [
+        [
+          "engine: rules",
+          1189
+        ],
+        [
+          "engine: inside a node",
+          1874
+        ],
+        [
+          "procedure conventions",
+          3055
+        ],
+        [
+          "policy",
+          105
+        ],
+        [
+          "node file: skills/stuck/SKILL.md",
+          287
+        ]
+      ],
+      "tools": [
+        "exit",
+        "ask",
+        "state_set",
+        "state_get",
+        "load"
+      ],
+      "handover": [],
+      "model_calls": 2,
+      "tokens_sent": 5931,
+      "cache_read": 5925,
+      "cache_written": 0
+    }
+  ]
+}

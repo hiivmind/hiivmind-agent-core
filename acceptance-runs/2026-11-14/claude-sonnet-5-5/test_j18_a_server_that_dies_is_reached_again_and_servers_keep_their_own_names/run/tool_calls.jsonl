@@ -1,0 +1,7 @@
+{"ts": 1794648670.2327163, "server_pid": 3609807, "server": "web", "tool": "fetch", "args": {"url": "https://example.org/a"}}
+{"ts": 1794648671.070685, "server_pid": 3609820, "server": "web", "tool": "fetch", "args": {"url": "https://example.org/a"}}
+{"ts": 1794648671.076447, "server_pid": 3609820, "server": "web", "tool": "fetch", "args": {"url": "https://example.org/b"}}
+{"ts": 1794648671.0823963, "server_pid": 3609789, "tool": "shell", "args": {"command": "echo one"}}
+{"ts": 1794648671.0903444, "server_pid": 3609789, "tool": "shell", "args": {"command": "echo two"}}
+{"ts": 1794648671.096867, "server_pid": 3609820, "server": "web", "tool": "note", "args": {"text": "for web"}}
+{"ts": 1794648671.1025288, "server_pid": 3609789, "tool": "note", "args": {"text": "for tools"}}
