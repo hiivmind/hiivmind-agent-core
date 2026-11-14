@@ -1,0 +1,14 @@
+[project]
+name = "agent-tools"
+version = "0.1.0"
+description = "Tool servers for agent-core instances: the shell server"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["mcp>=1.30,<2"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_tools"]

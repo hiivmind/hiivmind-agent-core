@@ -19,7 +19,7 @@ langgraph = ["langchain>=1.5,<2", "langgraph>=1.2,<2", "langchain-anthropic>=1.7
 agent-core = "agent_core.core.cli:main"
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio"]
+dev = ["pytest", "pytest-asyncio", "agent-tools"]
 
 [build-system]
 requires = ["hatchling"]
@@ -30,6 +30,7 @@ packages = ["src/agent_core"]
 include = ["src/agent_core/**/*.py", "src/agent_core/assets/*.md", "src/agent_core/core/schemas/*.json"]
 
 [tool.uv.sources]
+agent-tools = { workspace = true }
 mountainash-settings = { git = "ssh://git@github.com/mountainash-io/mountainash-settings.git", rev = "7a4b43bf4789b43a808ca1520012fc413d221e64" }
 
 [tool.uv.workspace]
