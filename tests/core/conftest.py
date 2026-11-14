@@ -1,12 +1,20 @@
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 
+from agent_core.backends.scripted import ScriptedBackend
+from agent_core.contracts import Brief
+from agent_core.core.controller import VERB_SPECS, Controller, NodeRun
 from agent_core.core.instance import load_instance
 from agent_core.core.settings import load_settings
+from agent_core.core.state import HarnessState, Slot
 from agent_core.core.templates import render
+from agent_core.person.nobody import Nobody
 from agent_core.resources.folder import FolderResources
+from agent_core.tools.function import FunctionSource
+from agent_core.tools.mcp_server import McpServerSource
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "instance"
 
@@ -91,3 +99,64 @@ def render_refresh(instance, render_text):
 def refresh_node(instance):
     """The fixture's `refresh` node: input `sources`; outputs `sources_updated` and `branch`."""
     return instance.nodes["refresh"]
+
+
+@pytest.fixture
+def run_dir(tmp_path, monkeypatch):
+    """The run's directory: the fixture servers and functions record their calls here."""
+    directory = tmp_path / "run"
+    directory.mkdir()
+    monkeypatch.setenv("AGENT_CORE_RUN_DIR", str(directory))
+    return directory
+
+
+@dataclass
+class Ran:
+    """What `run_node` returns: the controller's work, as the run left it."""
+
+    run: NodeRun
+    brief: Brief
+    controller: Controller
+
+    def __getattr__(self, name):
+        return getattr(self.run, name)
+
+    @property
+    def slot_rejections(self) -> int:
+        return self.run.slot.rejections
+
+
+@pytest.fixture
+def run_node(instance, run_dir):
+    """Run one node of the fixture instance through a driver and the controller, with real tools."""
+
+    async def run(node_name, inputs, script=None, *, driver=None, person=None, label=None, session=None):
+        node = instance.nodes[node_name]
+        settings = load_settings(instance, [FIXTURE / "config" / "alpha.yaml"])
+        env = {"AGENT_CORE_INSTANCE": str(FIXTURE), "AGENT_CORE_RUN_DIR": str(run_dir)}
+        sources = [FunctionSource(instance.functions, settings, FIXTURE), McpServerSource(instance.servers, env, FIXTURE)]
+        try:
+            tools = {spec.name: (source, spec) for source in sources for spec in await source.tools()}
+            state = HarnessState(session=dict(session or {}))
+            slot = state.node = Slot(node.name, dict(inputs), {}, {})
+            offered = ("exit", "ask", "state_set", "state_get", "load", *node.allowed_tools)
+            specs = {**{n: VERB_SPECS[n] for n in offered[:5]}, **{n: tools[n][1] for n in node.allowed_tools}}
+            brief = Brief(
+                instructions=f"# Procedure of the node that is running: `{node.name}`\n",
+                tools=tuple(specs.values()),
+                handover=(),
+                opening="Run the node.",
+            )
+            node_run = NodeRun(
+                node=node, slot=slot, state=state, offered=frozenset(offered), tools=tools,
+                functions=frozenset(instance.functions), person=person or Nobody(),
+                resources=FolderResources(FIXTURE), job=True, label=label or f"{node.name}#1", record=[], usage=[],
+            )
+            controller = Controller(node_run)
+            await (driver or ScriptedBackend(script=script)).drive(brief, controller)
+            return Ran(node_run, brief, controller)
+        finally:
+            for source in sources:
+                await source.close()
+
+    return run
