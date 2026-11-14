@@ -1,0 +1,9 @@
+from typing import Protocol
+
+from .values import ModelResponse, Outcome, ToolCall
+
+
+class NodeController(Protocol):
+    async def handle(self, call: ToolCall) -> Outcome: ...
+    async def responded(self, response: ModelResponse) -> None: ...
+    async def stopped(self, said: str) -> str | None: ...

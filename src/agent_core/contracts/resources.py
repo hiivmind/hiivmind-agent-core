@@ -1,0 +1,6 @@
+from typing import Protocol
+
+
+class ResourceSource(Protocol):
+    def read(self, path: str) -> str: ...
+    def exists(self, path: str) -> bool: ...

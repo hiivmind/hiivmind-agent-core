@@ -58,3 +58,22 @@ def test_person_ask_takes_a_label():
     from agent_core.contracts import Person
     p = inspect.signature(Person.ask).parameters
     assert list(p) == ["self", "question", "label"] and p["label"].default == ""
+
+
+def test_each_contract_imports_from_its_own_module():
+    import importlib
+    layout = {
+        "values": ["ToolSpec", "Message", "Brief", "ToolCall", "ModelResponse", "Result", "EndRun", "RunEnd"],
+        "errors": ["ToolError", "ToolServerError"],
+        "backend": ["NodeDriver"],
+        "controller": ["NodeController"],
+        "context": ["ContextStrategy", "HandoverRequest"],
+        "tools": ["ToolSource"],
+        "resources": ["ResourceSource"],
+        "state": ["State", "StateStore"],
+        "person": ["Person"],
+    }
+    for module, names in layout.items():
+        m = importlib.import_module(f"agent_core.contracts.{module}")
+        for name in names:
+            assert getattr(m, name).__module__ == m.__name__, (module, name)

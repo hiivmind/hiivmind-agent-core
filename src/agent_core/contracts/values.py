@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Literal
 
@@ -64,12 +63,3 @@ Outcome = Result | EndRun
 class RunEnd:
     by_controller: bool
     said: str
-
-
-@dataclass(frozen=True)
-class HandoverRequest:
-    transcript: tuple[Message, ...]
-    facts: dict
-    node: str
-    inputs: dict
-    summarise: Callable[[str, str], Awaitable[str]]

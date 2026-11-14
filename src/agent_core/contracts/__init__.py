@@ -1,18 +1,14 @@
 from .errors import ToolError, ToolServerError
-from .protocols import (
-    ContextStrategy,
-    NodeController,
-    NodeDriver,
-    Person,
-    ResourceSource,
-    State,
-    StateStore,
-    ToolSource,
-)
+from .backend import NodeDriver
+from .context import ContextStrategy, HandoverRequest
+from .controller import NodeController
+from .person import Person
+from .resources import ResourceSource
+from .state import State, StateStore
+from .tools import ToolSource
 from .values import (
     Brief,
     EndRun,
-    HandoverRequest,
     Message,
     ModelResponse,
     Outcome,
