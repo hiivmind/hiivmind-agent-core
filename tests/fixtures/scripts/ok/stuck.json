@@ -1,0 +1,24 @@
+[
+  [
+    [
+      "exit",
+      {
+        "outcome": "done",
+        "outputs": {
+          "code": 7
+        }
+      }
+    ]
+  ],
+  [
+    [
+      "exit",
+      {
+        "outcome": "done",
+        "outputs": {
+          "code": 8
+        }
+      }
+    ]
+  ]
+]

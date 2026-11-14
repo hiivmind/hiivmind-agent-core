@@ -1,0 +1,56 @@
+[
+  [
+    [
+      "ask",
+      {
+        "question": "Which sources should I update?"
+      }
+    ]
+  ],
+  [
+    [
+      "state_set",
+      {
+        "key": "sources",
+        "value": "polars"
+      }
+    ]
+  ],
+  [
+    [
+      "tools__shell",
+      {
+        "command": "echo checked alpha"
+      }
+    ]
+  ],
+  [
+    [
+      "state_set",
+      {
+        "key": "branch",
+        "value": "refresh/alpha"
+      }
+    ]
+  ],
+  [
+    [
+      "tools__shell",
+      {
+        "command": "echo updating polars"
+      }
+    ]
+  ],
+  [
+    [
+      "exit",
+      {
+        "outcome": "done",
+        "outputs": {
+          "sources_updated": "polars",
+          "branch": "refresh/alpha"
+        }
+      }
+    ]
+  ]
+]

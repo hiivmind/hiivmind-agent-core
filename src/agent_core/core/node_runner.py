@@ -4,6 +4,7 @@ from collections.abc import Mapping, Sequence
 from importlib.resources import files
 
 from agent_core.contracts.backend import NodeDriver
+from agent_core.contracts.context import HandoverRequest
 from agent_core.contracts.person import Person
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.tools import ToolSource
@@ -12,6 +13,7 @@ from agent_core.core.checks import unknown_inputs, unmet_precondition
 from agent_core.core.controller import VERB_SPECS, Controller, NodeRun
 from agent_core.core.instance import Instance, Node
 from agent_core.core.record import NodeRunNote
+from agent_core.core.registry import provider
 from agent_core.core.state import HarnessState, Slot, record_value
 from agent_core.core.templates import TemplateError, render
 
@@ -25,6 +27,16 @@ class NodeRunError(RuntimeError):
 
 def _asset(name: str) -> str:
     return files("agent_core.assets").joinpath(name).read_text().strip()
+
+
+def _require_declared_tools(node: Node, tools: Mapping[str, tuple[ToolSource, ToolSpec]]) -> None:
+    for name in node.allowed_tools:
+        if name not in tools:
+            raise ValueError(f"`{node.name}` declares the tool `{name}`, which no tool source offers")
+
+
+async def _cannot_summarise(system: str, text: str) -> str:
+    raise RuntimeError("a job's node run has no summariser in this version")
 
 
 def make_brief(
@@ -46,9 +58,7 @@ def make_brief(
     """
     if not job:
         raise ValueError("only a job's node run is made in this version; sessions arrive with step 2")
-    for name in node.allowed_tools:
-        if name not in tools:
-            raise ValueError(f"`{node.name}` declares the tool `{name}`, which no tool source offers")
+    _require_declared_tools(node, tools)
     rules, inside = _asset("ENGINE.md").split(INSIDE_A_NODE, 1)
     procedure = render(
         node.body,
@@ -96,7 +106,8 @@ def _note(label: str, node: str, parts: list[tuple[str, str]], brief: Brief, usa
 
 
 class NodeRunner:
-    """Runs the nodes of one instance. It keeps no facts between runs: each run starts from a fresh state (JOB-4)."""
+    """Runs the nodes of one instance. It keeps no facts between runs: each run starts from the state it is given, or a
+    fresh one (JOB-4)."""
 
     def __init__(
         self,
@@ -111,13 +122,18 @@ class NodeRunner:
         self.instance, self.settings, self.tools, self.functions = instance, settings, tools, functions
         self.person, self.resources, self.notes = person, resources, notes
 
-    async def run(self, node: str, inputs: dict, *, driver: NodeDriver, label: str, job: bool = True) -> dict:
+    async def run(
+        self, node: str, inputs: dict, *, driver: NodeDriver, label: str, job: bool = True,
+        state: HarnessState | None = None,
+    ) -> dict:
         found = self.instance.nodes.get(node)
         if found is None:
             raise ValueError(f"no node `{node}`; the nodes are: {', '.join(self.instance.nodes)}")
         if (refusal := unknown_inputs(found, inputs)) is not None:  # NODE-8a: before anything else
             raise ValueError(refusal)
-        state = HarnessState(session={})
+        _require_declared_tools(found, self.tools)  # a misdeclared node fails before any tool is called
+        if state is None:
+            state = HarnessState(session={})
         slot = state.node = Slot(found.name, dict(inputs), {}, {})
 
         def fill(text: str) -> str:
@@ -135,9 +151,14 @@ class NodeRunner:
                 return {"outcome": "failed", "reason": "precondition_unmet", "message": unmet, "outputs": {}}
             for key, value in writes:  # what a met check wrote counts as recorded when the node starts (NODE-11)
                 record_value(state, slot, found, key, value)
+            strategy = provider("context", "none")()  # a job's node gets its hand-over from the first strategy
+            handover = await strategy.build(HandoverRequest(
+                transcript=tuple(state.transcript), facts=state.session, node=found.name, inputs=slot.inputs,
+                summarise=_cannot_summarise,
+            ))
             brief, parts = make_brief(
                 self.instance, found, slot, state,
-                settings=self.settings, resources=self.resources, tools=self.tools, job=job,
+                settings=self.settings, resources=self.resources, tools=self.tools, job=job, handover=handover,
             )
         except TemplateError as e:  # TPL-2b, TPL-6b
             return {"outcome": "failed", "reason": "unknown_placeholder", "detail": str(e), "outputs": {}}

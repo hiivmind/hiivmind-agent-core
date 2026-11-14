@@ -2,8 +2,11 @@ import asyncio
 from pathlib import Path
 
 import pytest
+from records import shell_commands
 
+from agent_core.backends.scripted import ScriptedBackend
 from agent_core.contracts import HandoverRequest, Message, ModelResponse, RunEnd, ToolServerError, ToolSpec
+from agent_core.contracts.registry import REGISTERED
 from agent_core.core.checks import CheckError
 from agent_core.core.node_runner import NodeRunError, make_brief
 from agent_core.core.record import NodeRunNote
@@ -289,3 +292,39 @@ async def test_the_none_strategy_hands_over_nothing():                          
         transcript=(Message("user", "hello"),), facts={"a": 1}, node="refresh", inputs={}, summarise=summarise,
     )
     assert await strategy.build(request) == ()
+
+
+# --- the state a run is given, the hand-over, and the order of the checks (R13) ------------------------------------
+
+
+async def test_a_run_uses_the_state_it_is_given(open_runner):                              # STATE-4
+    state = HarnessState(session={"earlier": "kept"})
+    async with open_runner() as runner:
+        result = await runner.run(
+            "refresh", {"sources": "polars"}, driver=ScriptedBackend(script=DONE_WITH_BRANCH), label="refresh#1", state=state,
+        )
+    assert result["outcome"] == "done"
+    assert state.session == {"earlier": "kept", "branch": "refresh/alpha"}               # what it started with, and what it recorded
+    assert state.node.name == "refresh" and state.node.outputs == {"branch": "refresh/alpha"}
+
+
+async def test_the_handover_comes_from_the_context_strategy(run_node, monkeypatch):        # CTX-4
+    seen = []
+
+    class Remembering:
+        async def build(self, request):
+            seen.append(request)
+            return (Message("user", "what went before"),)
+
+    provider("context", "none")                                                         # imported, so the table exists
+    monkeypatch.setitem(REGISTERED["context"], "none", Remembering)
+    r = await run_node("refresh", {"sources": "polars"}, script=FAILED_EXIT, session={})
+    assert r.brief.handover == (Message("user", "what went before"),) and r.note.handover == ["what went before"]
+    assert [(q.node, q.inputs, q.transcript) for q in seen] == [("refresh", {"sources": "polars"}, ())]
+
+
+async def test_a_declared_tool_no_source_offers_fails_before_any_tool_is_called(run_node, broken, load, run_dir):
+    broken.frontmatter("gated", **{"allowed-tools": "[tools__nope]"})                  # `gated` has a shell precondition
+    with pytest.raises(ValueError, match="`gated` declares the tool `tools__nope`, which no tool source offers"):
+        await run_node("gated", {}, script=[[["never", {}]]], target=load())
+    assert shell_commands(run_dir) == []

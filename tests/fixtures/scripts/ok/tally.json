@@ -1,0 +1,21 @@
+[
+  [
+    [
+      "count_words",
+      {
+        "text": "one two three four five"
+      }
+    ]
+  ],
+  [
+    [
+      "exit",
+      {
+        "outcome": "done",
+        "outputs": {
+          "words": 5
+        }
+      }
+    ]
+  ]
+]

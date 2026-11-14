@@ -1,4 +1,8 @@
+import json
+import os
 import shutil
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -193,5 +197,119 @@ def run_node(open_runner):
                 controller.run if controller else None, capture.brief, controller, result,
                 notes[-1] if notes else None, fault,
             )
+
+    return run
+
+
+# --- the command line ---------------------------------------------------------------------------------------------
+
+REPO = Path(__file__).resolve().parents[2]
+SCRIPTS = REPO / "tests" / "fixtures" / "scripts"
+ALPHA = FIXTURE / "config" / "alpha.yaml"
+
+
+@pytest.fixture
+def make_instance(tmp_path):
+    """The fixture instance, as the path of its `instance.yaml`.
+
+    Given `instance_with` (a line added under `tools:`), `instance_with_lines` (lines added at the top level) or
+    `instance_replace` (a text and its replacement), it is a copy in a temporary directory, with the fixture's
+    servers beside it, edited as asked.
+    """
+
+    def make(instance_with=None, instance_with_lines=(), instance_replace=None) -> Path:
+        if instance_with is None and not instance_with_lines and instance_replace is None:
+            return FIXTURE / "instance.yaml"
+        base = tmp_path / "copy"
+        root = base / "instance"
+        ignore = shutil.ignore_patterns("__pycache__")
+        shutil.copytree(FIXTURE, root, ignore=ignore)
+        shutil.copytree(FIXTURE.parent / "servers", base / "servers", ignore=ignore)
+        text = (root / "instance.yaml").read_text()
+        if instance_replace is not None:
+            old, new = instance_replace
+            assert old in text
+            text = text.replace(old, new)
+        lines = text.splitlines()
+        if instance_with is not None:
+            lines.insert(lines.index("tools:") + 1, f"  {instance_with}")
+        lines += instance_with_lines
+        (root / "instance.yaml").write_text("\n".join(lines) + "\n")
+        return root / "instance.yaml"
+
+    return make
+
+
+class Finished:
+    """What the command did: its exit code, `record.json` of its run directory ({} if none), its standard output."""
+
+    def __init__(self, code: int, record: dict, out: str, run_dir: Path):
+        self.code, self.record, self.out, self.run_dir = code, record, out, run_dir
+
+    def __iter__(self):
+        return iter((self.code, self.record))
+
+
+def _command(instance_yaml: Path, name: str, run_dir: Path, settings, params, flags) -> list[str]:
+    command = [sys.executable, "-m", "agent_core.core.cli", "job", str(instance_yaml), name, "--run-dir", str(run_dir)]
+    for file in settings:
+        command += ["--settings", str(file)]
+    for key, value in params.items():
+        command += ["--param", f"{key}={value}"]
+    return command + list(flags)
+
+
+def _environment(case: str) -> dict:
+    return {**os.environ, "AGENT_CORE_SCRIPTED_SCRIPTS": str(SCRIPTS / case)}
+
+
+def _record(run_dir: Path) -> dict:
+    file = run_dir / "record.json"
+    return json.loads(file.read_text()) if file.exists() else {}
+
+
+@pytest.fixture
+def job(tmp_path, make_instance):
+    """`job(name, case="ok", ...)` runs `python -m agent_core.core.cli job` in a subprocess, with the scripts of `case`.
+
+    It gives the fixture instance, `config/alpha.yaml` as the settings file (the instance needs `CORPUS_REPO`), and
+    standard input that is not a terminal. `args` are more command line arguments; `settings` and `params` replace
+    the default settings files and add `--param`s.
+    """
+
+    def run(name, case="ok", *, args=(), settings=(ALPHA,), params=None, **instance_edits) -> Finished:
+        run_dir = tmp_path / "run"
+        command = _command(make_instance(**instance_edits), name, run_dir, settings, params or {}, args)
+        done = subprocess.run(
+            command, capture_output=True, text=True, cwd=REPO, env=_environment(case), stdin=subprocess.DEVNULL, timeout=300
+        )
+        return Finished(done.returncode, _record(run_dir), done.stdout, run_dir)
+
+    return run
+
+
+@pytest.fixture
+def pty_job(tmp_path, make_instance):
+    """`pty_job(name, typed=...)` runs the command with a pseudo-terminal as standard input and types `typed` into it.
+
+    Returns what the command printed and its run record. The scripts are those of `case`, "missing" by default: the
+    one in which `refresh` asks first.
+    """
+    import pty
+
+    def run(name, *, typed, case="missing", args=()):
+        run_dir = tmp_path / "run"
+        command = _command(make_instance(), name, run_dir, (ALPHA,), {}, args)
+        master, slave = pty.openpty()
+        child = subprocess.Popen(
+            command, stdin=slave, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, cwd=REPO, env=_environment(case)
+        )
+        os.close(slave)
+        os.write(master, (typed + "\n").encode())  # typed ahead: the terminal holds it until the job reads
+        try:
+            out, _ = child.communicate(timeout=300)
+        finally:
+            os.close(master)
+        return out, _record(run_dir)
 
     return run
