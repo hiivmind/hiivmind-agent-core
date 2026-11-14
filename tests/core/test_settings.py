@@ -63,3 +63,15 @@ def test_loading_settings_leaves_other_modules_and_the_path_alone(instance, monk
 def test_a_class_value_without_a_dot_is_a_settings_error_naming_it(instance):
     with pytest.raises(SettingsError, match="MySettings"):
         load_settings(replace(instance, settings={"class": "MySettings", "files": []}))
+
+
+def test_a_param_that_names_no_setting_is_an_error(instance):                                  # review 2
+    for name in ("CORPUS_REPOO", "corpus_repo"):
+        with pytest.raises(SettingsError) as e:
+            load_settings(instance, [alpha(instance)], {name: "x"})
+        assert str(e.value) == f"settings: no setting named `{name}`"
+
+
+def test_any_param_is_an_error_when_the_instance_has_no_settings(instance):
+    with pytest.raises(SettingsError, match="no setting named `PUSH`"):
+        load_settings(replace(instance, settings=None), params={"PUSH": "false"})

@@ -11,6 +11,8 @@ from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pydantic import SecretBytes, SecretStr
+
 from agent_core.contracts.backend import NodeDriver
 from agent_core.contracts.errors import ToolServerError
 from agent_core.contracts.person import Person
@@ -152,6 +154,9 @@ async def open_run(
     """
     instance_yaml, run_dir = Path(instance_yaml), Path(run_dir).resolve()
     async with AsyncExitStack() as stack:
+        root = str(instance_yaml.resolve().parent)
+        sys.path.insert(0, root)  # the instance's own files import each other by name (`from tools.sources import X`)
+        stack.callback(sys.path.remove, root)
         try:
             instance = load_instance(instance_yaml, provider("resources", "folder")(instance_yaml.resolve().parent))
             settings = load_settings(instance, [Path(f) for f in settings_files], params)
@@ -165,11 +170,31 @@ async def open_run(
         os.environ.update(given)
         tools = await _open_tools(stack, instance, settings)
         record = RunRecord(
-            params=dict(params or {}), settings_files=[str(f) for f in settings_files], backend=backend_name,
+            params=_masked(params or {}, settings), settings_files=[str(f) for f in settings_files], backend=backend_name,
             attended=attended, start=_now(),
         )
         person = provider("person", "terminal" if attended else "nobody")()
         yield Run(instance, settings, tools, person, provider("store", "memory")(), record, run_dir)
+
+
+def _masked(params: Mapping[str, str], settings: object | None) -> dict[str, str]:
+    """The params as the record keeps them: a value of a setting that is a secret is not written."""
+    return {
+        key: "********" if isinstance(getattr(settings, key, None), (SecretStr, SecretBytes)) else value
+        for key, value in params.items()
+    }
+
+
+def _one_line(e: BaseException) -> str:
+    return " ".join(f"{type(e).__name__}: {e}".split())
+
+
+def _make(label: str, build: Callable[[], ToolSource]) -> ToolSource:
+    """A tool source made by `build`; whatever it raises is a run that cannot start, named by `label`."""
+    try:
+        return build()
+    except Exception as e:
+        raise ValueError(f"instance.yaml: {label}: {_one_line(e)}") from e
 
 
 def _declared(instance: Instance, settings: object | None) -> Iterator[tuple[ToolSource, Callable[[str], str]]]:
@@ -179,11 +204,12 @@ def _declared(instance: Instance, settings: object | None) -> Iterator[tuple[Too
         lambda name: f"function {instance.functions[name]}",
     )
     yield (
-        provider("tool_source", "servers")(instance.servers, dict(os.environ), instance.root),
+        _make("tool servers", lambda: provider("tool_source", "servers")(instance.servers, dict(os.environ), instance.root)),
         lambda name: f'server "{name.partition("__")[0]}"',
     )
     for key, entry in instance.sources.items():
-        yield provider("tool_source", entry["provider"])(key, entry, instance.root), lambda name, key=key: f'source "{key}"'
+        built = _make(f'source "{key}"', lambda: provider("tool_source", entry["provider"])(key, entry, instance.root))
+        yield built, lambda name, key=key: f'source "{key}"'
 
 
 async def _open_tools(
@@ -195,8 +221,8 @@ async def _open_tools(
         for source, describe in _declared(instance, settings):
             stack.push_async_callback(source.close)
             opened.append((source, describe))
-    except ValueError as e:  # a function cannot be imported
-        raise RunCannotStart(str(e)) from e
+    except ValueError as e:  # a function cannot be imported; a source cannot be made
+        raise RunCannotStart(" ".join(str(e).split())) from e
     tools: dict[str, tuple[ToolSource, ToolSpec]] = {}
     owner: dict[str, str] = {}
     for source, describe in opened:

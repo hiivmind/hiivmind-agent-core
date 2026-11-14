@@ -1,1 +1,1 @@
-{"ts": 1794648190.5601766, "server_pid": 3604755, "tool": "shell", "args": {"command": "test -f config.yaml && echo present || echo missing"}}
+{"ts": 1794651880.7497773, "server_pid": 3639349, "tool": "shell", "args": {"command": "test -f config.yaml && echo present || echo missing"}}

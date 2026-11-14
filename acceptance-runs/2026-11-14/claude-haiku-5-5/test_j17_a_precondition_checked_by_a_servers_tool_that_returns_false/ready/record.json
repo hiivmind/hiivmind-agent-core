@@ -6,8 +6,8 @@
   ],
   "backend": "langgraph",
   "attended": false,
-  "start": "2026-11-14T09:23:50+00:00",
-  "end": "2026-11-14T09:23:53+00:00",
+  "start": "2026-11-14T10:25:22+00:00",
+  "end": "2026-11-14T10:25:24+00:00",
   "status": "ok",
   "summary": {
     "returned": [
@@ -28,7 +28,7 @@
       "parts": [
         [
           "engine: rules",
-          1189
+          2326
         ],
         [
           "engine: inside a node",
@@ -36,7 +36,7 @@
         ],
         [
           "procedure conventions",
-          3055
+          5323
         ],
         [
           "policy",
@@ -57,9 +57,9 @@
       ],
       "handover": [],
       "model_calls": 2,
-      "tokens_sent": 6030,
-      "cache_read": 6024,
-      "cache_written": 0
+      "tokens_sent": 8472,
+      "cache_read": 4900,
+      "cache_written": 3566
     }
   ]
 }

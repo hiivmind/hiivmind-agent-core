@@ -213,12 +213,12 @@ def make_instance(tmp_path):
     """The fixture instance, as the path of its `instance.yaml`.
 
     Given `instance_with` (a line added under `tools:`), `instance_with_lines` (lines added at the top level) or
-    `instance_replace` (a text and its replacement), it is a copy in a temporary directory, with the fixture's
+    `instance_replace` (a text and its replacement) or `files` (relative path -> text, written into the copy), it is a copy in a temporary directory, with the fixture's
     servers beside it, edited as asked.
     """
 
-    def make(instance_with=None, instance_with_lines=(), instance_replace=None) -> Path:
-        if instance_with is None and not instance_with_lines and instance_replace is None:
+    def make(instance_with=None, instance_with_lines=(), instance_replace=None, files=None) -> Path:
+        if instance_with is None and not instance_with_lines and instance_replace is None and not files:
             return FIXTURE / "instance.yaml"
         base = tmp_path / "copy"
         root = base / "instance"
@@ -235,6 +235,9 @@ def make_instance(tmp_path):
             lines.insert(lines.index("tools:") + 1, f"  {instance_with}")
         lines += instance_with_lines
         (root / "instance.yaml").write_text("\n".join(lines) + "\n")
+        for name, content in (files or {}).items():
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text(content)
         return root / "instance.yaml"
 
     return make

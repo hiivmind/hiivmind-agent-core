@@ -14,6 +14,13 @@ Step 1a ships the `job` command. Sessions, `run` and `lint` are step 2's.
 
 Python 3.12 or later. The settings library `mountainash-settings` is pinned to a revision in `pyproject.toml` until it is published.
 
+`uv` does not apply the `[tool.uv.sources]` of agent-core to a project that depends on it. A project that depends on agent-core by path must repeat the source of `mountainash-settings` in its own `pyproject.toml`, or `uv sync` cannot resolve it:
+
+```toml
+[tool.uv.sources]
+mountainash-settings = { git = "ssh://git@github.com/mountainash-io/mountainash-settings.git", rev = "7a4b43bf4789b43a808ca1520012fc413d221e64" }
+```
+
 ```bash
 uv sync                       # the core, the test tools and the shell server
 uv sync --extra langgraph     # also the LangGraph backend (LangChain, LangGraph, langchain-anthropic)
@@ -33,7 +40,7 @@ uv run agent-core job tests/fixtures/instance/instance.yaml nothing --param CORP
 | `--param KEY=VALUE` | a setting; repeatable; beats the environment, which beats the files |
 | `--backend NAME` | the backend, instead of the instance's |
 | `--no-ask` | a question ends the node run even when a person is at the terminal |
-| `--run-dir DIR` | default `<instance directory>/runs/<job>-<UTC start>/` |
+| `--run-dir DIR` | default `<instance directory>/runs/<job>-<UTC start>-<six hex digits>/` |
 
 The run directory holds `record.json`: what the job did, the status, the summary, the node runs and their cost. The exit code is `0` when the job succeeded, `1` when it failed and `2` when the run could not start (a message of one line is printed). A job is started by whatever the host provides (cron, a systemd timer, CI); the core has no scheduler.
 
@@ -41,7 +48,7 @@ The run directory holds `record.json`: what the job did, the status, the summary
 
 For a node run: the `backend` argument of `job.run_node`, else `--backend`, else `backend:` in `instance.yaml`. An unknown name, or a backend whose package is not installed, stops the run before it starts (exit code 2) and lists the backends that exist. There are two:
 
-- `langgraph`: a real model through LangChain. It needs the `langgraph` extra and `ANTHROPIC_API_KEY`. Its settings come from the environment with the prefix `AGENT_CORE_LANGGRAPH_` (`MODEL`, default `claude-sonnet-5-5`; `MAX_TOKENS`; `RECURSION_LIMIT`).
+- `langgraph`: a real model through LangChain. It needs the `langgraph` extra and `ANTHROPIC_API_KEY`. Its settings come from the environment with the prefix `AGENT_CORE_LANGGRAPH_` (`MODEL`, default `claude-sonnet-5-5`; `MAX_TOKENS`, default 16000, the limit on the tokens of one model reply, so `AGENT_CORE_LANGGRAPH_MAX_TOKENS=32000` raises it; `RECURSION_LIMIT`).
 - `scripted`: answers from JSON scripts, one file for each node, in the directory named by `AGENT_CORE_SCRIPTED_SCRIPTS`. It calls no model; the tests use it.
 
 An instance may register providers of its own (`providers:` in `instance.yaml` lists the files; `sources:` names a tool source by its registered name).
@@ -64,6 +71,11 @@ Results of 2026-11-14, 28 tests each:
 
 - `claude-haiku-5-5`: first run 27 passed, 1 failed (`j3`: after the output of the wrong shape was sent back once, the model asked the person instead of correcting it; the node file `shape` now says not to). After that change, 28 passed, none skipped as "not exercised".
 - `claude-sonnet-5-5` (the pass bar): 28 passed, none skipped as "not exercised". Criteria covered: 1, 3 (a) to (g), 12, 14 (job), 17 (job), 20, 21 (job), 22 (job).
+
+Re-run after the final review's fixes (the documents `ENGINE.md` and `PROCEDURES.md` had changed since the runs above), each once on `claude-haiku-5-5`, one after the other:
+
+- `tests/conformance -m model`: 11 passed, none skipped.
+- `tests/acceptance -m model`: 28 passed, none skipped.
 
 ## Specifications
 

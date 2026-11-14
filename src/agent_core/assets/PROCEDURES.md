@@ -76,7 +76,7 @@ The procedure of a node is a list of numbered steps. This section says how to re
 - **Display templates.** `DISPLAY` followed by a quoted block means: say that text to the person in a plain reply, as written. The values in it were filled in when the run started, so it can show an input or a setting, not a value produced during the run; read that from the result of the call that produced it. Do not add to it or leave parts out, and say it once.
 
   ```
-  DISPLAY "Updating {{ input.sources }} for {{ settings.CORPUS_NAME }}."
+  DISPLAY "Updating {{ input.sources }} for {{ settings.TARGET_NAME }}."
   ```
 
 - **Validation.** `VALIDATE` followed by a list of conditions means: check each condition against the values you have. When one fails, do what the step says for a failure, and do not go on as if it held. When the step says nothing, `EXIT` with the outcome `failed` and name the condition in `reason`.

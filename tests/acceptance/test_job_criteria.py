@@ -289,7 +289,7 @@ def test_j14_a_function_tool_is_called_by_a_script_and_by_the_model(accept):    
 def test_j14_a_declared_function_that_cannot_be_imported_stops_the_run(accept):            # criterion 21, TOOL-16
     yaml = accept.edited("import", tool="missing: functions:no_such_function")
     ran = accept.run("nothing", sub="import", instance=yaml)
-    want = 'error: instance.yaml: tool "missing": cannot import functions:no_such_function'
+    want = 'error: instance.yaml: tool "missing": cannot import functions:no_such_function: ImportError: the module has no function `no_such_function`'
     assert ran.code == 2 and ran.out.strip() == want and not (ran.dir / "trace.jsonl").exists(), ran.out
 
 

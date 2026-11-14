@@ -6,8 +6,8 @@
   ],
   "backend": "langgraph",
   "attended": false,
-  "start": "2026-11-14T09:22:29+00:00",
-  "end": "2026-11-14T09:22:33+00:00",
+  "start": "2026-11-14T10:23:58+00:00",
+  "end": "2026-11-14T10:24:01+00:00",
   "status": "failed",
   "summary": "RuntimeError: stuck failed: invalid_output",
   "failures": [
@@ -30,7 +30,7 @@
       "parts": [
         [
           "engine: rules",
-          1189
+          2326
         ],
         [
           "engine: inside a node",
@@ -38,7 +38,7 @@
         ],
         [
           "procedure conventions",
-          3055
+          5323
         ],
         [
           "policy",
@@ -58,9 +58,9 @@
       ],
       "handover": [],
       "model_calls": 2,
-      "tokens_sent": 5931,
-      "cache_read": 5925,
-      "cache_written": 0
+      "tokens_sent": 8373,
+      "cache_read": 4107,
+      "cache_written": 4260
     }
   ]
 }

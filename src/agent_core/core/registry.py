@@ -6,11 +6,10 @@ through the decorators in `agent_core.contracts.registry`.
 """
 
 import importlib
-import importlib.util
-import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from agent_core.contracts.loading import load_file
 from agent_core.contracts.registry import REGISTERED, REGISTERED_BACKENDS
 
 BACKENDS: dict[str, tuple[str, str]] = {
@@ -76,15 +75,4 @@ def provider(kind: str, name: str) -> object:
 def load_providers(root: Path, files: Sequence[str]) -> None:
     """Import each instance file by path; its decorators register it."""
     for file in files:
-        path = (root / file).resolve()
-        module_name = f"_agent_core_instance_{path.stem}_{abs(hash(path))}"
-        spec = importlib.util.spec_from_file_location(module_name, path)
-        if spec is None or spec.loader is None:
-            raise ImportError(f"cannot load providers from {path}")
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        try:
-            spec.loader.exec_module(module)
-        except BaseException:
-            del sys.modules[module_name]
-            raise
+        load_file(root / file)

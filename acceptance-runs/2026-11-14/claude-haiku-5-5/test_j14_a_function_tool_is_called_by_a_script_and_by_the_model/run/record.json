@@ -6,8 +6,8 @@
   ],
   "backend": "langgraph",
   "attended": false,
-  "start": "2026-11-14T09:24:52+00:00",
-  "end": "2026-11-14T09:24:57+00:00",
+  "start": "2026-11-14T10:26:22+00:00",
+  "end": "2026-11-14T10:26:27+00:00",
   "status": "ok",
   "summary": {
     "direct": {
@@ -46,7 +46,7 @@
       "parts": [
         [
           "engine: rules",
-          1189
+          2326
         ],
         [
           "engine: inside a node",
@@ -54,7 +54,7 @@
         ],
         [
           "procedure conventions",
-          3055
+          5323
         ],
         [
           "policy",
@@ -75,9 +75,9 @@
       ],
       "handover": [],
       "model_calls": 2,
-      "tokens_sent": 5943,
-      "cache_read": 5937,
-      "cache_written": 0
+      "tokens_sent": 8385,
+      "cache_read": 4157,
+      "cache_written": 4222
     },
     {
       "label": "ledger#2",
@@ -85,7 +85,7 @@
       "parts": [
         [
           "engine: rules",
-          1189
+          2326
         ],
         [
           "engine: inside a node",
@@ -93,7 +93,7 @@
         ],
         [
           "procedure conventions",
-          3055
+          5323
         ],
         [
           "policy",
@@ -114,9 +114,9 @@
       ],
       "handover": [],
       "model_calls": 2,
-      "tokens_sent": 6056,
-      "cache_read": 6050,
-      "cache_written": 0
+      "tokens_sent": 8498,
+      "cache_read": 4203,
+      "cache_written": 4289
     }
   ]
 }

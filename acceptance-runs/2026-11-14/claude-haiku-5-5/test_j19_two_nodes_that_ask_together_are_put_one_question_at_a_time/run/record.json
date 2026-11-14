@@ -6,8 +6,8 @@
   ],
   "backend": "langgraph",
   "attended": true,
-  "start": "2026-11-14T09:24:20+00:00",
-  "end": "2026-11-14T09:24:47+00:00",
+  "start": "2026-11-14T10:25:49+00:00",
+  "end": "2026-11-14T10:26:17+00:00",
   "status": "ok",
   "summary": {
     "returned": [
@@ -29,50 +29,12 @@
   "model_calls": 4,
   "runs": [
     {
-      "label": "asker#1",
-      "node": "asker",
-      "parts": [
-        [
-          "engine: rules",
-          1189
-        ],
-        [
-          "engine: inside a node",
-          1874
-        ],
-        [
-          "procedure conventions",
-          3055
-        ],
-        [
-          "policy",
-          105
-        ],
-        [
-          "node file: skills/asker/SKILL.md",
-          233
-        ]
-      ],
-      "tools": [
-        "exit",
-        "ask",
-        "state_set",
-        "state_get",
-        "load"
-      ],
-      "handover": [],
-      "model_calls": 2,
-      "tokens_sent": 5798,
-      "cache_read": 5730,
-      "cache_written": 62
-    },
-    {
       "label": "asker#2",
       "node": "asker",
       "parts": [
         [
           "engine: rules",
-          1189
+          2326
         ],
         [
           "engine: inside a node",
@@ -80,7 +42,7 @@
         ],
         [
           "procedure conventions",
-          3055
+          5323
         ],
         [
           "policy",
@@ -100,9 +62,47 @@
       ],
       "handover": [],
       "model_calls": 2,
-      "tokens_sent": 5800,
-      "cache_read": 5732,
-      "cache_written": 62
+      "tokens_sent": 8242,
+      "cache_read": 4721,
+      "cache_written": 3515
+    },
+    {
+      "label": "asker#1",
+      "node": "asker",
+      "parts": [
+        [
+          "engine: rules",
+          2326
+        ],
+        [
+          "engine: inside a node",
+          1874
+        ],
+        [
+          "procedure conventions",
+          5323
+        ],
+        [
+          "policy",
+          105
+        ],
+        [
+          "node file: skills/asker/SKILL.md",
+          233
+        ]
+      ],
+      "tools": [
+        "exit",
+        "ask",
+        "state_set",
+        "state_get",
+        "load"
+      ],
+      "handover": [],
+      "model_calls": 2,
+      "tokens_sent": 8240,
+      "cache_read": 4720,
+      "cache_written": 3514
     }
   ]
 }

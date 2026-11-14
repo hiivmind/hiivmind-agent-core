@@ -241,3 +241,16 @@ async def test_every_tool_source_is_closed_when_the_body_raises(make_instance, t
         async with open_run(yaml, settings_files=[ALPHA], run_dir=tmp_path / "run"):
             raise RuntimeError("the script broke")
     assert (tmp_path / "run" / "echo.closed").exists()
+
+
+async def test_the_instance_directory_is_first_on_the_path_while_a_run_is_open_and_not_after(tmp_path):   # review 1
+    import sys
+
+    before = list(sys.path)
+    async with open_run(INSTANCE, settings_files=[ALPHA], run_dir=tmp_path / "run"):
+        assert sys.path[0] == str(INSTANCE.parent)
+    assert sys.path == before
+    with pytest.raises(Exception):
+        async with open_run(INSTANCE, run_dir=tmp_path / "run"):     # settings are missing: the run cannot start
+            pass
+    assert sys.path == before

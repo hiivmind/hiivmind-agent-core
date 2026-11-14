@@ -6,8 +6,8 @@
   ],
   "backend": "langgraph",
   "attended": false,
-  "start": "2026-11-14T09:25:44+00:00",
-  "end": "2026-11-14T09:25:45+00:00",
+  "start": "2026-11-14T10:27:11+00:00",
+  "end": "2026-11-14T10:27:13+00:00",
   "status": "failed",
   "summary": "ToolServerError: tool server \"web\" stopped answering during `fetch`",
   "failures": [
@@ -24,7 +24,7 @@
       "parts": [
         [
           "engine: rules",
-          1189
+          2326
         ],
         [
           "engine: inside a node",
@@ -32,7 +32,7 @@
         ],
         [
           "procedure conventions",
-          3055
+          5323
         ],
         [
           "policy",
@@ -53,9 +53,9 @@
       ],
       "handover": [],
       "model_calls": 1,
-      "tokens_sent": 2988,
-      "cache_read": 2984,
-      "cache_written": 0
+      "tokens_sent": 4209,
+      "cache_read": 0,
+      "cache_written": 4205
     }
   ]
 }

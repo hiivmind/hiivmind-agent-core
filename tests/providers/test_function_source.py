@@ -49,10 +49,22 @@ async def test_function_that_raises_raises_its_own_exception(functions):        
 def test_function_that_cannot_be_imported_names_the_tool():                              # TOOL-11d
     with pytest.raises(ValueError) as e:
         FunctionSource({"missing": "functions:no_such_function"}, None, FIXTURE)
-    assert str(e.value) == 'instance.yaml: tool "missing": cannot import functions:no_such_function'
+    assert str(e.value) == (
+        'instance.yaml: tool "missing": cannot import functions:no_such_function: '
+        "ImportError: the module has no function `no_such_function`"
+    )
 
 
 def test_function_in_a_module_that_does_not_exist_names_the_tool():
     with pytest.raises(ValueError) as e:
         FunctionSource({"missing": "no_such_module:f"}, None, FIXTURE)
-    assert str(e.value) == 'instance.yaml: tool "missing": cannot import no_such_module:f'
+    assert str(e.value).startswith('instance.yaml: tool "missing": cannot import no_such_module:f: FileNotFoundError')
+    assert "no_such_module.py" in str(e.value)
+
+
+def test_function_file_that_does_not_parse_names_the_tool_and_the_error(tmp_path):    # a SyntaxError is not an ImportError
+    (tmp_path / "broken.py").write_text("def f(:\n")
+    with pytest.raises(ValueError) as e:
+        FunctionSource({"broken": "broken:f"}, None, tmp_path)
+    assert str(e.value).startswith('instance.yaml: tool "broken": cannot import broken:f: SyntaxError')
+    assert "\n" not in str(e.value)

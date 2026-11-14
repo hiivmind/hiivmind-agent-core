@@ -6,15 +6,15 @@
   ],
   "backend": "langgraph",
   "attended": false,
-  "start": "2026-11-14T09:23:09+00:00",
-  "end": "2026-11-14T09:23:11+00:00",
+  "start": "2026-11-14T10:24:39+00:00",
+  "end": "2026-11-14T10:24:41+00:00",
   "status": "ok",
   "summary": {
     "returned": [
       {
         "outcome": "failed",
         "outputs": {
-          "reason": "Precondition not met: config.yaml does not exist in the working directory (test -f config.yaml reported missing)."
+          "reason": "Precondition not met: config.yaml does not exist in the working directory."
         }
       }
     ]
@@ -24,7 +24,7 @@
       "node": "guarded",
       "outcome": "failed",
       "outputs": {
-        "reason": "Precondition not met: config.yaml does not exist in the working directory (test -f config.yaml reported missing)."
+        "reason": "Precondition not met: config.yaml does not exist in the working directory."
       }
     }
   ],
@@ -36,7 +36,7 @@
       "parts": [
         [
           "engine: rules",
-          1189
+          2326
         ],
         [
           "engine: inside a node",
@@ -44,7 +44,7 @@
         ],
         [
           "procedure conventions",
-          3055
+          5323
         ],
         [
           "policy",
@@ -65,9 +65,9 @@
       ],
       "handover": [],
       "model_calls": 2,
-      "tokens_sent": 6201,
-      "cache_read": 6195,
-      "cache_written": 0
+      "tokens_sent": 8643,
+      "cache_read": 4984,
+      "cache_written": 3653
     }
   ]
 }
