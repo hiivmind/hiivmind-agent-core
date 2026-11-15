@@ -28,6 +28,10 @@ PROVIDERS: dict[str, dict[str, str]] = {
         "terminal": "agent_core.person.terminal",
         "nobody": "agent_core.person.nobody",
     },
+    "journal": {
+        "none": "agent_core.journals.none",
+        "dbos": "agent_core.journals.dbos",
+    },
 }
 
 
