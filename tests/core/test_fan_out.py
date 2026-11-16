@@ -124,3 +124,12 @@ async def test_enrich_starts_with_a_fan_out(walk):                              
     result = await walk("enrich", nodes=nodes)
     assert names(result) == ["scan[list]", "scan[1]", "scan[2]", "scan", "index"]
     assert nodes.runs[-1] == ("index", {"scans": [{"entries": ["e1"]}, {"entries": ["e1"]}]})
+
+
+async def test_a_fanned_out_run_asks_nobody(walk):                                       # §4.3
+    nodes = Nodes()
+    await walk("refresh", nodes=nodes)
+    assert [(node, asks) for (node, _), asks in zip(nodes.runs, nodes.asks)] == [
+        ("update-sources", True), ("scan", False), ("scan", False), ("scan", False), ("index", True), ("verify", True),
+        ("publish", True),
+    ]

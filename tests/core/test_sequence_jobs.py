@@ -3,8 +3,6 @@
 import json
 import sqlite3
 
-from walking import SEQUENCES
-
 DONE_STEPS = [
     (1, "checks"), (2, "update-sources"), (3, "scan[1]"), (4, "scan[2]"), (5, "scan[3]"), (6, "index"), (7, "verify"),
     (8, "publish"),
@@ -127,6 +125,13 @@ def test_resume_of_a_run_that_raised_exits_one(seq_job):                        
     done = seq_job("refresh", args=["--resume", "run"])
     assert done.code == 1 and done.record["summary"] == first.record["summary"] and ran(done.record) == []
     assert first.record["summary"] in done.out
+
+
+def test_a_run_that_raised_keeps_the_steps_it_took(seq_job):                              # §4.6, RESUME-2, example 9
+    first = seq_job("refresh", scripts={"verify": None})
+    record = first.record
+    assert record["end_state"] == "failed" and record["facts"]["entries"] == ["e1", "e2"]
+    assert numbered(record) == DONE_STEPS[:7] and record["steps"][-1] == {"step": 7, "name": "verify", "outcome": None}
 
 
 def test_resume_of_an_unknown_run_fails_with_dboss_error(seq_job):                        # Review Focus 3

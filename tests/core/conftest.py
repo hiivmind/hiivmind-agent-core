@@ -369,7 +369,6 @@ class SeqJob:
             root = self.tmp_path / "copy" / "instance"
             if not root.exists():
                 shutil.copytree(SEQUENCES, root, ignore=shutil.ignore_patterns("__pycache__"))
-                shutil.copytree(SEQUENCES.parent / "servers", root.parent / "servers", ignore=shutil.ignore_patterns("__pycache__"))
             for file, text in files.items():
                 (root / file).parent.mkdir(parents=True, exist_ok=True)
                 (root / file).write_text(text)

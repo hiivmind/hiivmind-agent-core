@@ -174,6 +174,13 @@ async def test_a_driver_may_be_given_for_one_run(scripted, tmp_path):
     assert result["reason"] == "no_exit"
 
 
+async def test_a_run_that_may_not_ask_ends_with_needs_input_though_a_person_is_there(scripted, tmp_path):   # §4.3
+    asking = ScriptedBackend(script=[[["ask", {"question": "Which colour?"}]]])
+    async with open_run(INSTANCE, settings_files=[ALPHA], run_dir=tmp_path / "run", attended=True) as run:
+        result = await run.run_node("asker", {"who": "polars"}, driver=asking, asks=False)
+    assert (result["outcome"], result["reason"], result["question"]) == ("failed", "needs_input", "Which colour?")
+
+
 async def test_each_run_is_kept_in_the_store_under_its_label(scripted, tmp_path):          # STATE-4
     async with open_run(INSTANCE, settings_files=[ALPHA], run_dir=tmp_path / "run") as run:
         await asyncio.gather(

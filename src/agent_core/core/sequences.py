@@ -6,12 +6,12 @@ journal supplies `Steps`, which records each step so that a crashed run can be r
 
 import asyncio
 from collections.abc import Awaitable, Callable, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from agent_core.contracts.journal import Steps
 from agent_core.core.instance import Instance
 
-RunNode = Callable[[str, dict], Awaitable[dict]]          # (node, inputs) -> the node's result, as Run.run_node gives it
+RunNode = Callable[..., Awaitable[dict]]   # (node, inputs, *, asks=True) -> the node's result, as Run.run_node gives it
 CallTool = Callable[[str, dict], Awaitable[object]]       # (tool, args) -> its value, as Run.call gives it
 Check = Callable[[Sequence[dict], dict, str], Awaitable[tuple[dict | None, dict]]]   # (checks, facts, owner), as unmet_check
 
@@ -26,10 +26,14 @@ class SequenceRunner:
     run_node: RunNode
     call_tool: CallTool
     check: Check
+    progress: dict = field(default_factory=dict, init=False, repr=False)   # the steps and facts so far, if the walk raises
 
     async def walk(self, steps: Steps, name: str, facts: dict) -> dict:
         """Walk the sequence `name` from `facts`. Returns its end state, the steps it took, the facts and the summary."""
-        return await _Walk(self, steps).sequence(name, dict(facts))
+        walk = _Walk(self, steps)
+        facts = dict(facts)
+        self.progress = {"trail": walk.trail, "facts": facts}
+        return await walk.sequence(name, facts)
 
 
 def _summary(result: dict) -> object:
@@ -51,6 +55,12 @@ class _Walk:
     def _end(self, end: str, facts: dict, summary: object) -> dict:
         return {"end": end, "trail": self.trail, "facts": facts, "summary": summary}
 
+    async def _step(self, name: str, call: Callable[[], Awaitable[object]]) -> tuple[dict, object]:
+        """Run one journalled step. Its trail entry is kept, with no outcome, if the step raises."""
+        entry = {"step": self._number(), "name": name, "outcome": None}
+        self.trail.append(entry)
+        return entry, await self.steps.step(name, call)
+
     def _inputs(self, node: str, facts: dict, mapping: dict) -> dict:
         """Each declared input of the node that has a fact, by its own name or the name the mapping gives (SEQ-5)."""
         declared = self.runner.instance.nodes[node].inputs
@@ -64,22 +74,22 @@ class _Walk:
         found = self.runner.instance.sequences[name]
         for key, value in (found.get("inputs") or {}).items():  # fixed inputs fill only names not yet facts
             facts.setdefault(key, value)
-        rows, target, summary = found["transitions"], found["start"], None
+        rows, target, summary, outcome = found["transitions"], found["start"], None, None
         if found.get("checks"):  # SEQ-9: one step for the sequence's checks
-            number = self._number()
-            unmet, writes = await self.steps.step("checks", lambda: self._checks(found["checks"], facts, name))
+            entry, (unmet, writes) = await self._step("checks", lambda: self._checks(found["checks"], facts, name))
             if unmet is None:
                 facts.update(writes)
-                self.trail.append({"step": number, "name": "checks", "outcome": "met"})
+                entry["outcome"] = "met"
             else:
                 outcome, summary = unmet.get("outcome", "failed"), unmet["message"]
-                self.trail.append({"step": number, "name": "checks", "outcome": outcome})
+                entry["outcome"] = outcome
                 if "outcome" not in unmet:
                     return self._end("failed", facts, summary)
+                if outcome == "stopped":  # SEQ-7
+                    return self._end("stopped", facts, summary)
                 target = rows.get("check", {}).get(outcome)
                 if target is None:
                     return self._end("failed", facts, _no_transition("checks", outcome))
-        outcome = None
         while True:
             if target == "end":
                 return self._end("failed" if outcome == "failed" else "done", facts, summary)
@@ -92,12 +102,11 @@ class _Walk:
             else:
                 node, mapping = (target["node"], target["inputs"]) if isinstance(target, dict) else (target, {})
                 inputs = self._inputs(node, facts, mapping)
-                number = self._number()
-                result = await self.steps.step(node, lambda: self.runner.run_node(node, inputs))
+                entry, result = await self._step(node, lambda: self.runner.run_node(node, inputs))
                 outcome, summary = result["outcome"], _summary(result)
+                entry["outcome"] = outcome
                 declared = self.runner.instance.nodes[node].outputs
                 outputs = {k: v for k, v in (result.get("outputs") or {}).items() if k in declared}   # SEQ-6
-                self.trail.append({"step": number, "name": node, "outcome": outcome})
             facts.update(outputs)
             if outcome == "stopped":  # SEQ-7
                 return self._end("stopped", facts, summary)
@@ -109,9 +118,9 @@ class _Walk:
         """One run of the node per item, at most `max_concurrency` at once (FAN-1); the results in item order (FAN-3)."""
         node, over, into = spec["fan_out"], spec["over"], spec["into"]
         if isinstance(over, dict):  # FAN-5, FAN-6: a list computed by a tool is a step of its own
-            name, number = f"{node}[list]", self._number()
-            items = await self.steps.step(name, lambda: self.runner.call_tool(over["tool"], over.get("args") or {}))
-            self.trail.append({"step": number, "name": name, "outcome": "done"})
+            call = lambda: self.runner.call_tool(over["tool"], over.get("args") or {})  # noqa: E731
+            entry, items = await self._step(f"{node}[list]", call)
+            entry["outcome"] = "done"
         else:
             items = facts.get(over)
         if not isinstance(items, list):
@@ -152,9 +161,10 @@ class _Walk:
         return outcome, {into: done, f"{into}_failures": failures}
 
     async def _caught(self, node: str, inputs: dict) -> dict:
-        """A run that raises is a failed item, so the journal records a result, not an exception."""
+        """A run asks nobody (§4.3). A run that raises is a failed item, so the journal records a result, not an
+        exception."""
         try:
-            return await self.runner.run_node(node, inputs)
+            return await self.runner.run_node(node, inputs, asks=False)
         except Exception as e:
             return {"outcome": "failed", "outputs": {"reason": f"{type(e).__name__}: {e}"}}
 

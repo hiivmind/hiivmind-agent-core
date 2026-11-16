@@ -92,11 +92,13 @@ class Run:
             self._drivers[name] = cls(settings_cls())  # the backend's settings read their own environment (R11)
         return self._drivers[name]
 
-    async def run_node(self, node: str, inputs: dict, backend: str | None = None, *, driver: NodeDriver | None = None) -> dict:
+    async def run_node(
+        self, node: str, inputs: dict, backend: str | None = None, *, driver: NodeDriver | None = None, asks: bool = True
+    ) -> dict:
         """Run one node from fresh facts and return its result. The backend is `backend`, else the run's (REG-2).
 
         A tool server that cannot be reached raises, and the record names the node (TOOL-11e); a failed result does not
-        fail the job, it is recorded (JOB-9b).
+        fail the job, it is recorded (JOB-9b). A run that `asks` nobody ends a question as JOB-6 does with nobody there.
         """
         chosen = driver or self._driver(backend or self.record.backend)
         self._started += 1
@@ -104,7 +106,8 @@ class Run:
         saved = self.store.load(label)  # nothing: a label is used once
         state = HarnessState(session={}) if saved is None else from_dict(saved)
         runner = NodeRunner(
-            self.instance, self.settings, self._tools, self._functions, _Asking(self.person, inputs), self._resources,
+            self.instance, self.settings, self._tools, self._functions,
+            _Asking(self.person if asks else provider("person", "nobody")(), inputs), self._resources,
             self.record.notes,
         )
         try:
@@ -300,7 +303,8 @@ async def _run_sequence(
         else:
             result = await journal.start(run_id, runner.walk, name, inputs)
     except Exception as e:  # the run raised, or DBOS refused it (an unknown id): the run failed (JOB-17)
-        record.summary, record.status = f"{type(e).__name__}: {e}", "failed"
+        record.summary, record.status, record.end_state = f"{type(e).__name__}: {e}", "failed", "failed"
+        record.steps, record.facts = runner.progress.get("trail", []), runner.progress.get("facts")
         print(f"error: {record.summary}", flush=True)
         return
     finally:

@@ -36,6 +36,30 @@ async def test_a_check_without_an_outcome_ends_failed(walk, monkeypatch):
     assert names(result) == ["checks"]
 
 
+def gate(check_row):
+    """A sequence `gate` with one check, whose row is `check_row`, then `migrate`."""
+    checks = [{"tool": "ready", "message": "m"}]
+    return {"gate": {"description": "d", "start": "migrate", "checks": checks,
+                     "transitions": {"check": check_row, "migrate": {"done": "end"}}}}
+
+
+async def test_a_check_that_gives_failed_ends_the_sequence_failed(walk):                   # §4.2 step 5, JOB-17
+    async def broken(checks, facts, owner):
+        return {"tool": "ready", "outcome": "failed", "message": "The corpus is broken."}, {}
+
+    result = await walk("gate", check=broken, sequences=gate({"failed": "end"}))
+    assert (result["end"], result["summary"]) == ("failed", "The corpus is broken.")
+
+
+async def test_a_check_that_gives_stopped_ends_the_sequence(walk):                         # SEQ-7
+    async def halt(checks, facts, owner):
+        return {"tool": "ready", "outcome": "stopped", "message": "Stopped by the owner."}, {}
+
+    nodes = Nodes()
+    result = await walk("gate", check=halt, nodes=nodes, sequences=gate({"stopped": "migrate"}))
+    assert result["end"] == "stopped" and nodes.runs == []
+
+
 async def test_met_checks_writes_become_facts(walk):                                       # SEQ-9, NODE-11
     async def stamping(checks, facts, owner):
         return None, {"stamp": "s"}

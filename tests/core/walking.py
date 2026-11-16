@@ -17,7 +17,8 @@ RESULTS = {
 
 
 class Nodes:
-    """A `run_node` that gives each node its result from `results`, and keeps (node, inputs) of each run.
+    """A `run_node` that gives each node its result from `results`, and keeps (node, inputs) of each run, and in
+    `asks` whether each run could ask the person.
 
     A result may be a function of the inputs, or a coroutine function of them; `_` in a keyword stands for `-`.
     """
@@ -25,9 +26,11 @@ class Nodes:
     def __init__(self, **results):
         self.results = {**RESULTS, **{k.replace("_", "-"): v for k, v in results.items()}}
         self.runs: list[tuple[str, dict]] = []
+        self.asks: list[bool] = []
 
-    async def __call__(self, node: str, inputs: dict) -> dict:
+    async def __call__(self, node: str, inputs: dict, *, asks: bool = True) -> dict:
         self.runs.append((node, inputs))
+        self.asks.append(asks)
         result = self.results[node]
         if callable(result):
             result = result(inputs)
