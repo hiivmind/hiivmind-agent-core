@@ -1,4 +1,4 @@
-"""Run a job: open the instance's tools, run the script, keep the record (JOB-1 to JOB-9)."""
+"""Run a job: open the instance's tools, run the script or walk the sequence, keep the record (JOB-1 to JOB-17)."""
 
 import hashlib
 import importlib.util
@@ -19,13 +19,16 @@ from agent_core.contracts.person import Person
 from agent_core.contracts.state import StateStore
 from agent_core.contracts.tools import ToolSource
 from agent_core.contracts.values import ToolSpec
+from agent_core.core.checks import unmet_check
 from agent_core.core.instance import Instance, InstanceError, load_instance
 from agent_core.core.node_runner import NodeRunner
 from agent_core.core.record import RunRecord
 from agent_core.core.registry import BackendNotInstalled, UnknownBackend, provider
 from agent_core.core.registry import backend as known_backend
+from agent_core.core.sequences import SequenceRunner
 from agent_core.core.settings import SettingsError, load_settings
 from agent_core.core.state import HarnessState, from_dict, to_dict
+from agent_core.core.templates import render
 
 
 class RunCannotStart(Exception):
@@ -114,6 +117,17 @@ class Run:
         if result.get("outcome") == "failed":
             self.record.failures.append({"node": node, **result})
         return result
+
+    async def check(self, checks: Sequence[dict], facts: dict, owner: str) -> tuple[dict | None, dict]:
+        """A sequence's checks, against its facts: `input` placeholders in their args are the facts (§4.2)."""
+
+        def fill(text: str) -> str:
+            return render(
+                text, file=f"sequence {owner}", settings=self.settings, inputs=facts, session={}, values={},
+                resources=self._resources,
+            )
+
+        return await unmet_check(checks, facts, owner=owner, tools=self._tools, functions=set(self._functions), fill=fill)
 
 
 class Job:
@@ -260,6 +274,47 @@ def _job_main(root: Path, name: str) -> Callable:
     return main
 
 
+def _unknown(instance: Instance, name: str) -> str:
+    scripts = sorted(file.stem for file in (instance.root / "jobs").glob("*.py"))
+    return (
+        f"no sequence or job script `{name}`; the sequences are: {', '.join(sorted(instance.sequences)) or 'none'}; "
+        f"the job scripts are: {', '.join(scripts) or 'none'}"
+    )
+
+
+async def _run_sequence(
+    run: Run, name: str, inputs: dict, resume: str | None, rerun_from: tuple[str, int] | None
+) -> None:
+    """Walk the sequence `name` as one journalled run, and fill the record (§4.6, §4.7)."""
+    record = run.record
+    run_id = resume or run.run_dir.name
+    record.run_id, record.steps = run_id, []
+    print(f"run {run_id}" + (f" (from {rerun_from[0]}, step {rerun_from[1]})" if rerun_from else ""), flush=True)
+    runner = SequenceRunner(run.instance, run.run_node, run.call, run.check)
+    journal = provider("journal", "dbos")(run.run_dir.parent / "journal.sqlite", run.instance.name, run_id)
+    try:
+        if resume:
+            result = await journal.resume(run_id, runner.walk)
+        elif rerun_from:
+            result = await journal.rerun(run_id, rerun_from[0], rerun_from[1], runner.walk)
+        else:
+            result = await journal.start(run_id, runner.walk, name, inputs)
+    except Exception as e:  # the run raised, or DBOS refused it (an unknown id): the run failed (JOB-17)
+        record.summary, record.status = f"{type(e).__name__}: {e}", "failed"
+        print(f"error: {record.summary}", flush=True)
+        return
+    finally:
+        await journal.close()
+    record.end_state, record.steps, record.facts, record.summary = (
+        result["end"], result["trail"], result["facts"], result["summary"]
+    )
+    record.status = "failed" if result["end"] == "failed" else "ok"
+    if result["end"] == "failed":
+        print(f"sequence `{name}` ended failed: {result['summary']}", flush=True)
+    elif isinstance(result["summary"], str):
+        print(result["summary"], flush=True)
+
+
 async def run_job(
     instance_yaml: Path,
     name: str,
@@ -269,8 +324,14 @@ async def run_job(
     no_ask: bool = False,
     backend: str | None = None,
     run_dir: Path,
+    inputs: Mapping[str, str] | None = None,
+    resume: str | None = None,
+    rerun_from: tuple[str, int] | None = None,
 ) -> int:
-    """Run the job `name` of the instance and write `record.json`. Returns the exit code: 0 ok, 1 failed, 2 could not start."""
+    """Run the sequence or job script `name` of the instance and write `record.json`.
+
+    Returns the exit code: 0 ok, 1 failed, 2 could not start. `inputs`, `resume` and `rerun_from` apply to a sequence.
+    """
     attended = sys.stdin is not None and sys.stdin.isatty() and not no_ask  # JOB-6
     try:
         async with open_run(
@@ -278,13 +339,22 @@ async def run_job(
         ) as run:
             record = run.record
             record.job = name
-            try:
-                record.summary = await _job_main(run.instance.root, name)(Job(run))
-                record.status = "ok"
-            except RunCannotStart:
-                raise
-            except Exception as e:  # the script decided the job failed, or broke (JOB-9b)
-                record.summary, record.status = f"{type(e).__name__}: {e}", "failed"
+            sequence = name in run.instance.sequences
+            script = (run.instance.root / "jobs" / f"{name}.py").is_file()
+            if sequence and script:  # JOB-15
+                raise RunCannotStart(f"`{name}` is both a job script and a sequence")
+            if not sequence and not script:
+                raise RunCannotStart(_unknown(run.instance, name))
+            if sequence:  # JOB-14
+                await _run_sequence(run, name, dict(inputs or {}), resume, rerun_from)
+            else:
+                try:
+                    record.summary = await _job_main(run.instance.root, name)(Job(run))
+                    record.status = "ok"
+                except RunCannotStart:
+                    raise
+                except Exception as e:  # the script decided the job failed, or broke (JOB-9b)
+                    record.summary, record.status = f"{type(e).__name__}: {e}", "failed"
             record.end = _now()
             (run.run_dir / "record.json").write_text(json.dumps(record.as_dict(), indent=2, default=str))
             return 0 if record.status == "ok" else 1

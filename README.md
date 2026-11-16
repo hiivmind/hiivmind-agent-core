@@ -2,11 +2,11 @@
 
 A small Python harness that runs model-driven procedures, called nodes, for jobs. A node is a Markdown file of numbered steps. A backend drives one bounded run of one node with a model; the core owns the state, the tools, the person and the record. The core imports no agent framework: each framework sits behind a backend, and a backend is a provider the core is handed by name.
 
-Step 1a ships the `job` command. Sessions, `run` and `lint` are step 2's.
+Step 1a ships the `job` command; step 1c adds sequence jobs. Sessions, `run` and `lint` are step 2's.
 
 ## Layout
 
-- `src/agent_core/`: the core (`core/`), the contracts it and the providers share (`contracts/`), and the providers: backends (`backends/`), tool sources (`tools/`), resources, stores, persons and context strategies. The assets `ENGINE.md` and `PROCEDURES.md`, which every node run is given, are package data (`assets/`).
+- `src/agent_core/`: the core (`core/`), the contracts it and the providers share (`contracts/`), and the providers: backends (`backends/`), tool sources (`tools/`), resources, stores, persons, context strategies and run journals (`journals/`). The assets `ENGINE.md` and `PROCEDURES.md`, which every node run is given, are package data (`assets/`).
 - `packages/agent-tools/`: a second distribution, with the shell server (`shell__run`). The core ships no tools.
 - `docs/inspection-step-1a.md`: the checklist of obligations that no test shows, and the map from the review's test list to tests.
 
@@ -28,7 +28,7 @@ uv sync --extra langgraph     # also the LangGraph backend (LangChain, LangGraph
 
 ## Run a job
 
-An instance is a directory with `instance.yaml`, `topology.yaml`, `POLICY.md`, nodes under `skills/` and job scripts under `jobs/`. A job is the file `jobs/<name>.py` with an `async def main(job)`. It has `job.settings`, `await job.call(tool, args)` for a tool of the instance, and `await job.run_node(node, inputs)` for a node run; what `main` returns is the job's summary.
+An instance is a directory with `instance.yaml`, `topology.yaml`, `POLICY.md`, nodes under `skills/` and job scripts under `jobs/`. `agent-core job <instance.yaml> <name>` runs the sequence `<name>` of the topology, or else the job script `jobs/<name>.py`; a name that is both stops the run. A job script has an `async def main(job)`. It has `job.settings`, `await job.call(tool, args)` for a tool of the instance, and `await job.run_node(node, inputs)` for a node run; what `main` returns is the job's summary.
 
 ```bash
 uv run agent-core job tests/fixtures/instance/instance.yaml nothing --param CORPUS_REPO=/tmp
@@ -40,9 +40,16 @@ uv run agent-core job tests/fixtures/instance/instance.yaml nothing --param CORP
 | `--param KEY=VALUE` | a setting; repeatable; beats the environment, which beats the files |
 | `--backend NAME` | the backend, instead of the instance's |
 | `--no-ask` | a question ends the node run even when a person is at the terminal |
-| `--run-dir DIR` | default `<instance directory>/runs/<job>-<UTC start>-<six hex digits>/` |
+| `--run-dir DIR` | default `<instance directory>/runs/<run id>/`; a run id is `<name>-<UTC start>-<six hex digits>` |
+| `--input KEY=VALUE` | a fact a sequence starts with; repeatable |
+| `--resume RUN_ID` | continue the sequence run `RUN_ID`: the steps that finished are not run again |
+| `--rerun-from RUN_ID:STEP` | a new sequence run: `RUN_ID`'s steps before `STEP` are replayed from its results, the rest run with the instance as it is now |
 
-The run directory holds `record.json`: what the job did, the status, the summary, the node runs and their cost. The exit code is `0` when the job succeeded, `1` when it failed and `2` when the run could not start (a message of one line is printed). A job is started by whatever the host provides (cron, a systemd timer, CI); the core has no scheduler.
+`--input`, `--resume` and `--rerun-from` apply to sequences; a job script ignores them. A resume or a re-run is given the same name and settings as the run it continues.
+
+The run directory holds `record.json`: what the job did, the status, the summary, the node runs of this process and their cost. A sequence's record also has its run id, its end state (`done`, `stopped` or `failed`), its steps in order and its final facts. The exit code is `0` when the job succeeded or the sequence ended `done` or `stopped`, `1` when it failed or the run raised, and `2` when the run could not start (a message of one line is printed). A job is started by whatever the host provides (cron, a systemd timer, CI); the core has no scheduler.
+
+A sequence run prints its run id first. Each of its steps is recorded by DBOS in `journal.sqlite` beside the run directories (`<instance directory>/runs/journal.sqlite` by default). A run is resumed only when `--resume` names it. Resuming a run that finished returns its result; resuming a run that raised raises its error again, and `--rerun-from` that step is the way on.
 
 ## How a backend is chosen
 

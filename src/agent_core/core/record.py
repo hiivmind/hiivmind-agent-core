@@ -27,7 +27,9 @@ class RunRecord:
     """The record of a job (JOB-9a, SCOPE-7): what was asked, how it went, and what each node run did.
 
     `failures` holds each failed node run as `{"node": ..., ...the failed result}`, or `{"node": ..., "error": ...}` when
-    a tool server could not be reached. `notes` is written as `runs`.
+    a tool server could not be reached. `notes` is written as `runs`, and holds only the node runs of this process: a
+    resumed run's finished steps are in `steps`, not in `runs`. A sequence job also keeps its run id, its end state,
+    its steps in order (§4.6) and its final facts; a script's record has none of these keys.
     """
 
     params: dict
@@ -41,13 +43,17 @@ class RunRecord:
     summary: object = None             # what `main` returned, or the exception's `Type: message`
     failures: list[dict] = field(default_factory=list)
     notes: list[NodeRunNote] = field(default_factory=list)
+    run_id: str | None = None
+    end_state: str | None = None       # a sequence's: `done`, `stopped` or `failed`
+    steps: list | None = None          # a sequence's: [{"step": n or None, "name": ..., "outcome": ...}]
+    facts: dict | None = None
 
     @property
     def model_calls(self) -> int:
         return sum(note.model_calls for note in self.notes)
 
     def as_dict(self) -> dict:
-        return {
+        kept = {
             "job": self.job,
             "params": self.params,
             "settings_files": self.settings_files,
@@ -61,3 +67,6 @@ class RunRecord:
             "model_calls": self.model_calls,
             "runs": [asdict(note) for note in self.notes],
         }
+        if self.steps is not None:
+            kept |= {"run_id": self.run_id, "end_state": self.end_state, "steps": self.steps, "facts": self.facts}
+        return kept

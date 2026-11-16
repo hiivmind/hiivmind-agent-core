@@ -351,3 +351,58 @@ def walk(seq_instance, tmp_path, monkeypatch):
         return await provider("journal", "none")().start("run-1", runner.walk, name, dict(facts or {}))
 
     return run
+
+
+class SeqJob:
+    """`agent-core job` on the sequences fixture, in a subprocess; each run has its own directory under `tmp_path`.
+
+    `scripts` replaces the scripted backend's script of the nodes it names (a missing node script: `None`); `env` adds
+    environment variables; `files` (relative path -> text) makes the instance a copy with those files written.
+    """
+
+    def __init__(self, tmp_path: Path):
+        self.tmp_path = tmp_path
+
+    def command(self, name, *, run="run", args=(), scripts=None, env=None, files=None) -> tuple[list[str], dict, Path]:
+        instance = SEQUENCES / "instance.yaml"
+        if files:
+            root = self.tmp_path / "copy" / "instance"
+            if not root.exists():
+                shutil.copytree(SEQUENCES, root, ignore=shutil.ignore_patterns("__pycache__"))
+                shutil.copytree(SEQUENCES.parent / "servers", root.parent / "servers", ignore=shutil.ignore_patterns("__pycache__"))
+            for file, text in files.items():
+                (root / file).parent.mkdir(parents=True, exist_ok=True)
+                (root / file).write_text(text)
+            instance = root / "instance.yaml"
+        directory = SEQUENCES / "scripts" / "ok"
+        if scripts:
+            directory = self.tmp_path / f"scripts-{run}"
+            shutil.copytree(SEQUENCES / "scripts" / "ok", directory, dirs_exist_ok=True)
+            for node, script in scripts.items():
+                (directory / f"{node}.json").unlink(missing_ok=True)
+                if script is not None:
+                    (directory / f"{node}.json").write_text(json.dumps(script))
+        run_dir = self.tmp_path / run
+        command = [sys.executable, "-m", "agent_core.core.cli", "job", str(instance), name, "--run-dir", str(run_dir), *args]
+        environment = {**os.environ, "AGENT_CORE_SCRIPTED_SCRIPTS": str(directory), **(env or {})}
+        return command, environment, run_dir
+
+    def __call__(self, name, **options) -> Finished:
+        command, environment, run_dir = self.command(name, **options)
+        done = subprocess.run(
+            command, capture_output=True, text=True, cwd=REPO, env=environment, stdin=subprocess.DEVNULL, timeout=300
+        )
+        return Finished(done.returncode, _record(run_dir), done.stdout + done.stderr, run_dir)
+
+    def start(self, name, **options) -> tuple[subprocess.Popen, Path]:
+        command, environment, run_dir = self.command(name, **options)
+        child = subprocess.Popen(
+            command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=REPO, env=environment,
+            stdin=subprocess.DEVNULL,
+        )
+        return child, run_dir
+
+
+@pytest.fixture
+def seq_job(tmp_path):
+    return SeqJob(tmp_path)

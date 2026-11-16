@@ -51,7 +51,8 @@ def test_a_tool_server_that_cannot_be_started_exits_two(job):                   
 
 def test_a_job_the_instance_does_not_have_exits_two(job):                                      # R11
     ran = job("no_such_job")
-    assert ran.code == 2 and ran.out == f"error: no job `no_such_job` in {INSTANCE}/jobs/\n" and ran.record == {}
+    assert ran.code == 2 and ran.record == {}
+    assert ran.out.startswith("error: no sequence or job script `no_such_job`; the sequences are: none; the job scripts are: ")
 
 
 def test_a_job_file_without_main_exits_two(make_instance, capsys, tmp_path):                   # R11

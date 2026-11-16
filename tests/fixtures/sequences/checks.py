@@ -1,6 +1,7 @@
 """Checks and tools of the sequences fixture. Each reads an environment variable a test sets."""
 import json
 import os
+import time
 from pathlib import Path
 
 
@@ -30,8 +31,10 @@ def stale_batches() -> list:
 def crash_point(node: str) -> str:
     """Record that `node` ran, and in which process; end the process at once where SEQ_CRASH names the node.
 
-    With SEQ_CRASH_AT=n, only the n-th call for that node ends it, counted in the run directory.
+    With SEQ_CRASH_AT=n, only the n-th call for that node ends it, counted in the run directory. SEQ_SLOW=s waits s
+    seconds first, so that a test can do something while the run is going.
     """
+    time.sleep(float(os.environ.get("SEQ_SLOW", "0")))
     with (_run_dir() / "calls.jsonl").open("a") as f:
         f.write(json.dumps({"node": node, "pid": os.getpid(), "label": os.environ.get("SEQ_LABEL")}) + "\n")
     if os.environ.get("SEQ_CRASH") == node:
