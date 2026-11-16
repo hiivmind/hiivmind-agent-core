@@ -1,0 +1,20 @@
+[
+ [
+  [
+   "exit",
+   {
+    "outcome": "updated",
+    "outputs": {
+     "rescan_batches": [
+      "b1",
+      "b2",
+      "b3"
+     ],
+     "sources_updated": [
+      "polars"
+     ]
+    }
+   }
+  ]
+ ]
+]

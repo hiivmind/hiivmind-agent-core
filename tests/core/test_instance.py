@@ -1,7 +1,12 @@
+from pathlib import Path
+
 import pytest
 
 from agent_core.contracts.registry import REGISTERED
-from agent_core.core.instance import InstanceError
+from agent_core.core.instance import InstanceError, load_instance
+from agent_core.resources.folder import FolderResources
+
+SEQUENCES = Path(__file__).resolve().parents[1] / "fixtures" / "sequences"
 
 
 def test_loads_the_fixture(instance):
@@ -15,7 +20,7 @@ def test_loads_the_fixture(instance):
     assert instance.functions["count_words"] == "functions:count_words"
     assert instance.settings["class"] == "settings.SpikeSettings"
     assert instance.topology["exits"] == {"done": "route", "declined": "route", "failed": "route"}
-    assert instance.providers == () and instance.sources == {}
+    assert instance.providers == () and instance.sources == {} and instance.sequences == {}
     assert instance.root.name == "instance"
 
 
@@ -89,6 +94,29 @@ def test_a_topology_violation_names_the_file(broken, load):
     text = (broken.root / "topology.yaml").read_text()
     broken("topology.yaml", text.replace("exits:\n  done: route\n  declined: route\n  failed: route\n", ""))
     with pytest.raises(InstanceError, match=r"topology\.yaml.*exits"):
+        load()
+
+
+def test_the_sequences_fixture_loads():
+    instance = load_instance(SEQUENCES / "instance.yaml", FolderResources(SEQUENCES))
+    assert instance.sequences["refresh"]["start"] == "update-sources"
+    assert instance.sequences["enrich"]["start"]["over"] == {"tool": "stale_batches"}
+
+
+def _sequence(broken, text):
+    broken.append("topology.yaml", "sequences:\n" + text)
+
+
+def test_a_sequence_needs_a_description(broken, load):                    # §4.1
+    _sequence(broken, "  work:\n    start: plain\n    transitions: {plain: {done: end}}\n")
+    with pytest.raises(InstanceError, match=r"topology\.yaml.*description"):
+        load()
+
+
+@pytest.mark.parametrize("start", ["end", "{link: other}"])
+def test_a_start_cannot_be_end_or_a_link(broken, load, start):             # §4.1
+    _sequence(broken, f"  work:\n    description: d\n    start: {start}\n    transitions: {{plain: {{done: end}}}}\n")
+    with pytest.raises(InstanceError, match=r"topology\.yaml"):
         load()
 
 

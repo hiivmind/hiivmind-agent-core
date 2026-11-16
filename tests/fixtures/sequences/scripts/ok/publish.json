@@ -1,0 +1,21 @@
+[
+ [
+  [
+   "crash_point",
+   {
+    "node": "publish"
+   }
+  ]
+ ],
+ [
+  [
+   "exit",
+   {
+    "outcome": "published",
+    "outputs": {
+     "pr_url": "https://example.org/pr/1"
+    }
+   }
+  ]
+ ]
+]

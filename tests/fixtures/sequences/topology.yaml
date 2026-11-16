@@ -1,0 +1,53 @@
+nodes:
+  - {name: update-sources, path: skills/update-sources}
+  - {name: scan, path: skills/scan}
+  - {name: index, path: skills/index}
+  - {name: verify, path: skills/verify}
+  - {name: publish, path: skills/publish}
+  - {name: status, path: skills/status}
+  - {name: migrate, path: skills/migrate}
+  - {name: graph, path: skills/graph}
+  - {name: asker, path: skills/asker}
+exits:
+  done: route
+  failed: route
+sequences:
+  refresh:
+    description: Bring the corpus up to date with its sources.
+    start: update-sources
+    checks:
+      - {tool: ready, message: "The corpus is not ready."}
+      - {tool: index_is_v2, outcome: v1, message: "The index is v1."}
+      - {tool: refresh_needed, outcome: current, message: "Already current."}
+    transitions:
+      check: {v1: {link: migrate}, current: end}
+      update-sources:
+        updated: {fan_out: scan, over: rescan_batches, as: batch, into: scan_results, max_concurrency: 1}
+        current: end
+        failed: end
+      scan: {done: {node: index, inputs: {scans: scan_results}}, failed: end}
+      index: {done: verify, failed: end}
+      verify: {done: publish, failed: end}
+      publish: {published: end, nothing-to-publish: end, failed: end}
+  enrich:
+    description: Re-scan the batches whose files changed.
+    start: {fan_out: scan, over: {tool: stale_batches}, as: batch, into: scans}
+    transitions:
+      scan: {done: index, failed: end}
+      index: {done: end, failed: end}
+  migrate:
+    description: Migrate a v1 index.
+    start: migrate
+    transitions:
+      migrate: {done: end, failed: end, skipped: end}
+  status:
+    description: Say whether the corpus needs a refresh.
+    start: status
+    transitions:
+      status: {stale: {link: refresh}, current: end, failed: end}
+  graph:
+    description: Work on the concept graph.
+    start: graph
+    inputs: {action: show}
+    transitions:
+      graph: {done: end, failed: end}

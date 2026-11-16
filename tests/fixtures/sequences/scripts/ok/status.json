@@ -1,0 +1,13 @@
+[
+ [
+  [
+   "exit",
+   {
+    "outcome": "stale",
+    "outputs": {
+     "refresh_needed": true
+    }
+   }
+  ]
+ ]
+]

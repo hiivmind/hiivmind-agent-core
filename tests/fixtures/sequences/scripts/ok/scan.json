@@ -1,0 +1,23 @@
+[
+ [
+  [
+   "crash_point",
+   {
+    "node": "scan"
+   }
+  ]
+ ],
+ [
+  [
+   "exit",
+   {
+    "outcome": "done",
+    "outputs": {
+     "entries": [
+      "e1"
+     ]
+    }
+   }
+  ]
+ ]
+]

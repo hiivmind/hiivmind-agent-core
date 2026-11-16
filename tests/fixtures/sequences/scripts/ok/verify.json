@@ -1,0 +1,21 @@
+[
+ [
+  [
+   "crash_point",
+   {
+    "node": "verify"
+   }
+  ]
+ ],
+ [
+  [
+   "exit",
+   {
+    "outcome": "done",
+    "outputs": {
+     "drift": 0
+    }
+   }
+  ]
+ ]
+]

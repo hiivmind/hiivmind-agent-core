@@ -52,6 +52,7 @@ class Instance:
     settings: dict | None
     providers: tuple[str, ...] = ()   # instance files that register providers
     sources: dict[str, dict] = field(default_factory=dict)   # key -> {provider: <tool source>, ...}; tools are named <key>__<tool>
+    sequences: dict[str, dict] = field(default_factory=dict)  # name -> {description, start, inputs?, checks?, transitions}
 
 
 class InstanceError(ValueError):
@@ -192,4 +193,5 @@ def load_instance(instance_yaml: Path, resources: ResourceSource) -> Instance:
         settings=data.get("settings"),
         providers=providers,
         sources=data["sources"],
+        sequences=topology.get("sequences") or {},
     )
