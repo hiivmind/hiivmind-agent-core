@@ -70,3 +70,9 @@ def test_only_a_backend_imports_an_sdk():
     for layer in PROVIDERS - {"backends"}:
         for file in files(layer):
             assert not {m.split(".")[0] for m, _ in imports(file)} & SDKS, file
+
+
+def test_only_the_dbos_journal_imports_dbos():                                         # RESUME-6, LAYER-2
+    for file in sorted(PKG.rglob("*.py")):
+        if file != PKG / "journals" / "dbos.py":
+            assert "dbos" not in {m.split(".")[0] for m, _ in imports(file)}, file
