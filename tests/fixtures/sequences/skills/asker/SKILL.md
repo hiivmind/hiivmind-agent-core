@@ -1,15 +1,14 @@
 ---
 name: asker
-description: Toy asker node for testing sequences.
+description: Offer to add the proposed concepts. Used to test how a person's request to stop is understood.
 inputs: {}
 outputs: {}
-exits:
-- done
-- failed
+exits: [done, declined, failed]
 allowed-tools: []
 ---
-# asker
+# Asker
 
 ## Steps
 
-1. EXIT with the outcome and outputs the script gives.
+1. ASK exactly: "I found 3 proposed concepts: tabular, lazy and eager. Should I add them?"
+2. If the person agrees, EXIT `done`.

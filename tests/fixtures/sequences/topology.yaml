@@ -8,6 +8,7 @@ nodes:
   - {name: migrate, path: skills/migrate}
   - {name: graph, path: skills/graph}
   - {name: asker, path: skills/asker}
+  - {name: wrap, path: skills/wrap}
 exits:
   done: route
   failed: route
@@ -58,3 +59,9 @@ sequences:
       migrate: {done: {node: index, inputs: {scans: scan_results}}, failed: end}
       index: {done: verify, skipped: verify, failed: end}
       verify: {done: end, failed: end}
+  ask_then_go:
+    description: Offer the concepts, then finish.
+    start: asker
+    transitions:
+      asker: {done: wrap, skipped: wrap, declined: wrap, failed: end}
+      wrap: {done: end, failed: end}

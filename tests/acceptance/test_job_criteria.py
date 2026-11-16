@@ -31,6 +31,7 @@ import os
 import re
 import select
 import time
+from pathlib import Path
 
 import pytest
 
@@ -393,3 +394,20 @@ def test_j18_a_function_named_like_a_servers_tool_stops_the_job_naming_both(acce
     ran = accept.run("nothing", sub="same_name", instance=yaml)
     want = 'error: instance.yaml: two tools are named "tools__shell": function functions:count_words and server "tools"'
     assert (ran.code, ran.out.strip()) == (2, want)
+
+
+# --- the stop rule (design §4.5, example 8): a sequence job a person started ------------------------------------------
+
+SEQUENCES = Path(__file__).resolve().parents[1] / "fixtures" / "sequences" / "instance.yaml"
+
+
+def test_skip_this_carries_on(accept):                                                       # SEQ-8, ENGINE.md
+    ran = accept.run("ask_then_go", typed="skip this one, carry on", instance=SEQUENCES)
+    steps = [(s["name"], s["outcome"]) for s in ran.record.get("steps", [])]
+    assert ran.code == 0 and steps == [("asker", "skipped"), ("wrap", "done")], (ran.code, steps, ran.out, ran.err)
+
+
+def test_stop_the_whole_thing_ends_the_sequence(accept):                                    # SEQ-7, ENGINE.md
+    ran = accept.run("ask_then_go", typed="stop the whole thing", instance=SEQUENCES)
+    steps = [(s["name"], s["outcome"]) for s in ran.record.get("steps", [])]
+    assert ran.code == 0 and steps == [("asker", "stopped")] and ran.record["end_state"] == "stopped", (ran.code, steps)
