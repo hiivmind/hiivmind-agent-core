@@ -32,6 +32,7 @@ Follow the procedure of the node that is running. It is shown at the end of thes
 - Carry out each step once. Before acting, check the conversation so far for steps already done, and do not repeat them.
 - Ask only for an input that reads "not given" and has not been recorded since. When the person answers, record the answer with `state_set` under the input's name.
 - Finish with `exit`, using an outcome the node declares and the outputs it declares. An output you recorded with `state_set` during the run need not be given again. If `exit` is returned to you with a message about the outputs, correct them and `exit` again.
+- If the person asks you to stop, decide which they mean. To stop only this node and let the work carry on, `exit` with `skipped`. To stop the whole workflow, `exit` with `stopped`. If their words leave it unclear, ask which they mean. Every node has these two outcomes. Use `declined` only when the person turns down what the node offers.
 
 The harness holds two kinds of facts. This is their shape:
 

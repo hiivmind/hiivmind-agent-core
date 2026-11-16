@@ -1,8 +1,8 @@
-"""Checks made before a node starts: its inputs, and its declared preconditions (NODE-8a, NODE-11 to NODE-13)."""
+"""Checks made before a node or a sequence starts: a node's inputs, and declared checks (NODE-8a, NODE-11 to NODE-13a)."""
 
 import copy
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 
 from agent_core.contracts.errors import ToolError, ToolServerError
 from agent_core.contracts.tools import ToolSource
@@ -34,25 +34,25 @@ def _met(result: object) -> bool:
     return result is not False and (not isinstance(result, dict) or result.get("exit", 0) == 0)
 
 
-async def unmet_precondition(
-    node: Node,
-    inputs: Mapping,
+async def unmet_check(
+    checks: Sequence[dict],
     facts: Mapping,
     *,
+    owner: str,
     tools: Mapping[str, tuple[ToolSource, ToolSpec]],
     functions: set[str],
     fill: Callable[[str], str],
-) -> tuple[str | None, list[tuple[str, object]]]:
-    """Run the node's declared checks in order; each is a call to a declared tool.
+) -> tuple[dict | None, dict]:
+    """Run declared checks in order; each is a call to a declared tool. `owner` is the node or sequence they belong to.
 
-    Returns the first failing check's filled message or None, and what the checks wrote to `state`. A check by a
-    function tool is given one `StateView` of the session facts and the inputs, shared by the node's checks, so a
-    later check sees what an earlier one wrote (NODE-11). When a check is not met nothing is returned as written.
+    Returns the first check that is not met, as a copy with its message filled, or None; and what the checks wrote. A
+    check by a function tool is given one `StateView` of the facts, shared by the checks, so a later check sees what an
+    earlier one wrote (NODE-11). When a check is not met nothing is returned as written.
     """
-    state = StateView(copy.deepcopy({**facts, **inputs}))
+    state = StateView(copy.deepcopy(dict(facts)))
     before = copy.deepcopy(dict(state))
-    cannot = f"the precondition check for `{node.name}` could not be run"
-    for check in node.preconditions:
+    cannot = f"the precondition check for `{owner}` could not be run"
+    for check in checks:
         name = check["tool"]
         if name not in tools:
             raise CheckError(f"{cannot}: no tool `{name}`")
@@ -69,5 +69,5 @@ async def unmet_precondition(
             except (ToolError, ToolServerError) as e:
                 raise CheckError(f"{cannot}: {e}") from None
         if not met:
-            return fill(check["message"]), []
-    return None, written(node, before, state)
+            return {**check, "message": fill(check["message"])}, {}
+    return None, dict(written(before, state))

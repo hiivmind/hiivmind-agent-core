@@ -9,7 +9,7 @@ from agent_core.contracts.person import Person
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.tools import ToolSource
 from agent_core.contracts.values import Brief, Message, ModelResponse, ToolSpec
-from agent_core.core.checks import unknown_inputs, unmet_precondition
+from agent_core.core.checks import unknown_inputs, unmet_check
 from agent_core.core.controller import VERB_SPECS, Controller, NodeRun
 from agent_core.core.instance import Instance, Node
 from agent_core.core.record import NodeRunNote
@@ -77,7 +77,7 @@ def make_brief(
         (
             f"node file: {node.file}",
             f"# Procedure of the node that is running: `{node.name}`\n"
-            f"The outcomes of this node are: {', '.join(node.exits)}.\n\n{procedure}",
+            f"The outcomes of this node are: {', '.join(node.outcomes)}.\n\n{procedure}",
         ),
     ]
     specs = (*(VERB_SPECS[name] for name in JOB_VERBS), *(tools[name][1] for name in node.allowed_tools))
@@ -143,13 +143,15 @@ class NodeRunner:
             )
 
         try:
-            unmet, writes = await unmet_precondition(
-                found, slot.inputs, state.session,
+            unmet, writes = await unmet_check(
+                found.preconditions, {**state.session, **slot.inputs}, owner=found.name,
                 tools=self.tools, functions=set(self.functions), fill=fill,
             )
-            if unmet is not None:  # NODE-13: the driver is never called
-                return {"outcome": "failed", "reason": "precondition_unmet", "message": unmet, "outputs": {}}
-            for key, value in writes:  # what a met check wrote counts as recorded when the node starts (NODE-11)
+            if unmet is not None and "outcome" in unmet:  # NODE-13a: the check's outcome, and the driver is never called
+                return {"outcome": unmet["outcome"], "message": unmet["message"], "outputs": {}}
+            if unmet is not None:  # NODE-13
+                return {"outcome": "failed", "reason": "precondition_unmet", "message": unmet["message"], "outputs": {}}
+            for key, value in writes.items():  # what a met check wrote counts as recorded when the node starts (NODE-11)
                 record_value(state, slot, found, key, value)
             strategy = provider("context", "none")()  # a job's node gets its hand-over from the first strategy
             handover = await strategy.build(HandoverRequest(

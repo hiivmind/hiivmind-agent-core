@@ -15,6 +15,7 @@ from agent_core.core.registry import PROVIDERS, load_providers
 
 SCHEMAS = Path(__file__).parent / "schemas"
 BUILT_IN_SOURCES = ("servers", "tools")
+BUILT_IN_OUTCOMES: tuple[str, ...] = ("skipped", "stopped")   # every node may exit with these (SEQ-8)
 
 
 @dataclass(frozen=True)
@@ -30,6 +31,11 @@ class Node:
     preconditions: tuple[dict, ...]
     context: str
     body: str
+
+    @property
+    def outcomes(self) -> tuple[str, ...]:
+        """The declared exits, then each built-in outcome not already among them."""
+        return self.exits + tuple(o for o in BUILT_IN_OUTCOMES if o not in self.exits)
 
 
 @dataclass(frozen=True)

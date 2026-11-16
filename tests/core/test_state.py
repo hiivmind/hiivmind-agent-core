@@ -71,17 +71,17 @@ def test_update_and_setdefault_record_writes_but_construction_does_not():
     assert v.written == {"b", "c", "d", "e"} and v == {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5}
 
 
-def test_written_lists_assigned_names_and_values_changed_in_place(refresh_node):
+def test_written_lists_assigned_names_and_values_changed_in_place():
     before = {"a": 1, "items": [1], "same": [0], "gone": 1}
     after = StateView({"a": 1, "items": [1], "same": [0], "gone": 1})
     after["a"] = 1                       # assigned, though unchanged
     after["items"].append(2)             # changed in place, never assigned
     after["new"] = "n"
-    assert written(refresh_node, before, after) == [("a", 1), ("items", [1, 2]), ("new", "n")]
+    assert written(before, after) == [("a", 1), ("items", [1, 2]), ("new", "n")]
 
 
-def test_written_is_empty_when_nothing_was_touched(refresh_node):
-    assert written(refresh_node, {"a": 1}, StateView({"a": 1})) == []
+def test_written_is_empty_when_nothing_was_touched():
+    assert written({"a": 1}, StateView({"a": 1})) == []
 
 
 def test_closing_merges_declared_outputs_and_clears_the_slot():

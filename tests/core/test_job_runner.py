@@ -32,6 +32,12 @@ def test_a_job_that_needs_no_model_exits_zero(job):                             
     assert shell_commands(ran.run_dir) == ["echo up-to-date"]      # the server was given AGENT_CORE_RUN_DIR and wrote there
 
 
+def test_run_node_returns_a_checks_named_outcome(job):                                     # NODE-13a, Review Focus 5
+    code, record = job("gated_route")
+    assert code == 0 and record["model_calls"] == 0
+    assert record["summary"] == {"returned": [{"outcome": "v1", "message": "The corpus alpha has a v1 index.", "outputs": {}}]}
+
+
 def test_the_record_has_what_the_job_did(job):                                            # JOB-9a, SCOPE-7
     code, record = job("refresh_given", params={"CORPUS_NAME": "alpha"})
     assert code == 0 and set(record) == RECORD_KEYS

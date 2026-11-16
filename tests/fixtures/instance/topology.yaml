@@ -24,6 +24,7 @@ nodes:
   - {name: gated_rec, path: skills/gated_rec}
   - {name: gated_norec, path: skills/gated_norec}
   - {name: improvise, path: skills/improvise}
+  - {name: gated_route, path: skills/gated_route}
 exits:
   done: route
   declined: route

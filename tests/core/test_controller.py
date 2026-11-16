@@ -84,9 +84,15 @@ async def test_the_value_on_exit_stands_over_one_that_was_recorded(run_node):   
 
 async def test_an_outcome_the_node_does_not_declare_is_an_error_and_the_run_goes_on(run_node):   # JOB-7a
     r = await run_node("shape", {}, script=[[["exit", {"outcome": "declined", "outputs": {}}]], [["exit", {"outcome": "failed", "outputs": {}}]]])
-    assert r.record[0].result == "`declined` is not an outcome of `shape`; its outcomes are: done, failed"
+    assert r.record[0].result == "`declined` is not an outcome of `shape`; its outcomes are: done, failed, skipped, stopped"
     assert r.slot_rejections == 0
     assert r.result == {"outcome": "failed", "outputs": {}}
+
+
+async def test_exit_accepts_skipped_and_stopped_for_any_node(run_node):                     # SEQ-8
+    for outcome in ("skipped", "stopped"):
+        r = await run_node("shape", {}, script=[[["exit", {"outcome": outcome, "outputs": {}}]]])
+        assert r.result == {"outcome": outcome, "outputs": {}}
 
 
 async def test_another_outcome_may_carry_an_undeclared_reason_and_done_may_not(run_node):  # JOB-13

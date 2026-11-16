@@ -72,7 +72,7 @@ async def test_the_procedure_line_is_written_once_and_the_outcomes_follow_it(run
     r = await run_node("refresh", {"sources": "polars"}, script=FAILED_EXIT)
     lines = r.brief.instructions.splitlines()
     assert lines.count(PROCEDURE_LINE) == 1 and sum("Procedure of the node that is running" in line for line in lines) == 1
-    assert lines[lines.index(PROCEDURE_LINE) + 1] == "The outcomes of this node are: done, declined, failed."
+    assert lines[lines.index(PROCEDURE_LINE) + 1] == "The outcomes of this node are: done, declined, failed, skipped, stopped."
     assert r.brief.instructions.index("# Refresh") > r.brief.instructions.index(PROCEDURE_LINE)
     assert r.brief.opening == "Run the node." and r.brief.tools[0].name == "exit"
 
@@ -115,6 +115,12 @@ async def test_a_check_written_in_python_that_is_not_met_fails_the_same_way(run_
     r = await run_node("gated_fn", {}, script=[[["never", {}]]])
     assert r.result == {"outcome": "failed", "reason": "precondition_unmet", "message": "The corpus alpha is never ready for this.", "outputs": {}}
     assert r.note is None
+
+
+async def test_a_precondition_with_an_outcome_gives_it_without_a_model_call(run_node):     # NODE-13a
+    r = await run_node("gated_route", {}, script=[[["never", {}]]])
+    assert r.result == {"outcome": "v1", "message": "The corpus alpha has a v1 index.", "outputs": {}}
+    assert r.note is None and r.brief is None
 
 
 async def test_what_a_met_check_wrote_shows_in_the_procedure_and_counts_on_exit(run_node):  # NODE-11

@@ -83,7 +83,7 @@ def record_value(state: HarnessState, slot: Slot, node: Node, key: str, value: o
     return where
 
 
-def written(node: Node, before: dict, after: StateView) -> list[tuple[str, object]]:
+def written(before: dict, after: StateView) -> list[tuple[str, object]]:
     """What a function tool wrote: names assigned through `after`, and values changed in place."""
     return [
         (key, value)

@@ -5,7 +5,7 @@ import pytest
 
 from agent_core.contracts.errors import ToolError, ToolServerError
 from agent_core.contracts.values import ToolSpec
-from agent_core.core.checks import CheckError, unknown_inputs, unmet_precondition
+from agent_core.core.checks import CheckError, unknown_inputs, unmet_check
 from agent_core.core.instance import load_instance
 from agent_core.core.settings import load_settings
 from agent_core.core.templates import render
@@ -53,9 +53,7 @@ def checks(instance, sources):
                 resources=FolderResources(FIXTURE),
             )
 
-        return await unmet_precondition(
-            node, inputs, facts, tools=tools, functions=set(instance.functions), fill=fill
-        )
+        return await node_checks(node, inputs, facts, tools=tools, functions=set(instance.functions), fill=fill)
 
     return run
 
@@ -117,6 +115,14 @@ class Stub:
         return self.answer(state) if callable(self.answer) else self.answer
 
 
+async def node_checks(node, inputs, facts, *, tools, functions, fill):
+    """A node's checks as `NodeRunner.run` makes them: the unmet check's message, or None, and the writes in order."""
+    unmet, writes = await unmet_check(
+        node.preconditions, {**facts, **inputs}, owner=node.name, tools=tools, functions=functions, fill=fill
+    )
+    return (None if unmet is None else unmet["message"]), list(writes.items())
+
+
 def stubbed(instance, *checks, answers):
     node = dataclasses.replace(instance.nodes["refresh"], preconditions=tuple(checks))
     tools = {name: (source, ToolSpec(name, "", {})) for name, source in answers.items()}
@@ -124,7 +130,7 @@ def stubbed(instance, *checks, answers):
 
 
 async def run_stubbed(node, tools, *, functions=(), inputs=None, facts=None):
-    return await unmet_precondition(
+    return await node_checks(
         node, inputs or {}, facts or {}, tools=tools, functions=set(functions), fill=lambda text: text.upper()
     )
 
@@ -186,3 +192,32 @@ async def test_a_tool_that_says_it_failed_or_is_unreachable_is_a_check_that_cann
         node, tools = stubbed(instance, {"tool": "a", "message": "m"}, answers={"a": Stub(error)})
         with pytest.raises(CheckError, match=r"^the precondition check for `refresh` could not be run: "):
             await run_stubbed(node, tools)
+
+
+async def test_unmet_check_returns_the_check_and_no_writes():                               # NODE-13a
+    def writes_then_fails(state):
+        state["seen"] = 1
+        return False
+
+    checks = [{"tool": "a", "message": "m"}, {"tool": "b", "outcome": "v1", "message": "the index is v1"}]
+    tools = {"a": (Stub(True), ToolSpec("a", "", {})), "b": (Stub(writes_then_fails), ToolSpec("b", "", {}))}
+    unmet, writes = await unmet_check(
+        checks, {}, owner="refresh", tools=tools, functions={"a", "b"}, fill=lambda text: text.upper()
+    )
+    assert unmet == {"tool": "b", "outcome": "v1", "message": "THE INDEX IS V1"} and writes == {}
+    assert checks[1]["message"] == "the index is v1"  # the declared check is not changed
+
+
+async def test_met_checks_return_every_key_they_changed():                                  # SEQ-9, NODE-11
+    def stamps(state):
+        state["stamp"] = "s"
+        state["items"].append(2)
+        return True
+
+    tools = {"a": (Stub(stamps), ToolSpec("a", "", {}))}
+    facts = {"items": [1], "kept": "k"}
+    unmet, writes = await unmet_check(
+        [{"tool": "a", "message": "m"}], facts, owner="refresh", tools=tools, functions={"a"}, fill=str
+    )
+    assert unmet is None and writes == {"stamp": "s", "items": [1, 2]}
+    assert facts == {"items": [1], "kept": "k"}

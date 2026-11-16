@@ -173,7 +173,7 @@ class Controller:
                 raise
             return Result(f"error: {name} raised {type(e).__name__}: {e}", error=True), []  # nothing it wrote is kept
         text = _text(value)
-        writes = written(run.node, before, seen) if function else []
+        writes = written(before, seen) if function else []
         if writes:  # a value the function changed reaches the model in the result of the call that changed it
             text += "\n\n(recorded by this call: " + ", ".join(f"{k} = {json.dumps(v)}" for k, v in writes) + ")"
         return Result(text), writes
@@ -188,9 +188,9 @@ class Controller:
 
     def _exit(self, outcome: object, outputs: object) -> Outcome:
         run, node, slot = self.run, self.run.node, self.run.slot
-        if outcome not in node.exits:
+        if outcome not in node.outcomes:
             return Result(
-                f"`{outcome}` is not an outcome of `{node.name}`; its outcomes are: {', '.join(node.exits)}", error=True
+                f"`{outcome}` is not an outcome of `{node.name}`; its outcomes are: {', '.join(node.outcomes)}", error=True
             )
         if isinstance(outputs, dict):
             given = {**slot.outputs, **outputs}  # what was recorded while the node ran, then what EXIT carries (JOB-7a)
