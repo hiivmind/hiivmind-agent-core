@@ -51,3 +51,10 @@ sequences:
     inputs: {action: show}
     transitions:
       graph: {done: end, failed: end}
+  chain:
+    description: A short chain without a fan-out.
+    start: migrate
+    transitions:
+      migrate: {done: {node: index, inputs: {scans: scan_results}}, failed: end}
+      index: {done: verify, skipped: verify, failed: end}
+      verify: {done: end, failed: end}
