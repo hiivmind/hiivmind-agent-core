@@ -4,6 +4,7 @@ The walk is shared by jobs and sessions (SEQ-11): the runner supplies how a node
 journal supplies `Steps`, which records each step so that a crashed run can be resumed.
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
 
@@ -105,7 +106,57 @@ class _Walk:
                 return self._end("failed", facts, _no_transition(node, outcome))
 
     async def _fan_out(self, spec: dict, facts: dict) -> tuple[str, dict]:
-        raise NotImplementedError("fan-out")
+        """One run of the node per item, at most `max_concurrency` at once (FAN-1); the results in item order (FAN-3)."""
+        node, over, into = spec["fan_out"], spec["over"], spec["into"]
+        if isinstance(over, dict):  # FAN-5, FAN-6: a list computed by a tool is a step of its own
+            name, number = f"{node}[list]", self._number()
+            items = await self.steps.step(name, lambda: self.runner.call_tool(over["tool"], over.get("args") or {}))
+            self.trail.append({"step": number, "name": name, "outcome": "done"})
+        else:
+            items = facts.get(over)
+        if not isinstance(items, list):
+            named = over["tool"] if isinstance(over, dict) else over
+            raise SequenceError(f"the fan-out over `{named}` needs a list; it got {type(items).__name__}")
+        reserved = self.steps.reserve(len(items))  # numbered in item order before any run starts
+        first = self._number(len(items))
+        gate = asyncio.Semaphore(spec.get("max_concurrency", 4))
+        stop = False
+
+        async def one(n: int, slot, item) -> dict | None:
+            nonlocal stop
+            async with gate:
+                if stop:  # a run stopped: runs not yet started do not start
+                    return None
+                inputs = self._inputs(node, {**facts, spec["as"]: item}, {})
+                result = await slot.run(f"{node}[{n}]", lambda: self._caught(node, inputs))
+                stop = stop or result["outcome"] == "stopped"
+                return result
+
+        results = await asyncio.gather(*(one(n, slot, item) for n, (slot, item) in enumerate(zip(reserved, items), 1)))
+        declared = self.runner.instance.nodes[node].outputs
+        done, failures = [], []
+        for n, (item, result) in enumerate(zip(items, results), 1):
+            if result is None:
+                continue
+            self.trail.append({"step": first + n - 1, "name": f"{node}[{n}]", "outcome": result["outcome"]})
+            outputs = result.get("outputs") or {}
+            if result["outcome"] == "done":
+                done.append({k: v for k, v in outputs.items() if k in declared})
+            elif result["outcome"] != "stopped":
+                failures.append({"item": item, "outcome": result["outcome"], "reason": outputs.get("reason", result.get("reason"))})
+        if any(result is not None and result["outcome"] == "stopped" for result in results):
+            outcome = "stopped"
+        else:
+            outcome = "done" if done or not items else "failed"   # FAN-4
+        self.trail.append({"step": None, "name": node, "outcome": outcome})
+        return outcome, {into: done, f"{into}_failures": failures}
+
+    async def _caught(self, node: str, inputs: dict) -> dict:
+        """A run that raises is a failed item, so the journal records a result, not an exception."""
+        try:
+            return await self.runner.run_node(node, inputs)
+        except Exception as e:
+            return {"outcome": "failed", "outputs": {"reason": f"{type(e).__name__}: {e}"}}
 
 
 def _no_transition(node: str, outcome: str) -> str:

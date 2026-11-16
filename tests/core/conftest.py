@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import os
 import shutil
@@ -8,13 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
+from walking import SEQUENCES, Nodes
 
 from agent_core.backends.scripted import ScriptedBackend
 from agent_core.contracts import Brief, ToolServerError
+from agent_core.core.checks import unmet_check
 from agent_core.core.controller import Controller, NodeRun
 from agent_core.core.instance import load_instance
 from agent_core.core.node_runner import NodeRunner
 from agent_core.core.record import NodeRunNote
+from agent_core.core.registry import provider
+from agent_core.core.sequences import SequenceRunner
 from agent_core.core.settings import load_settings
 from agent_core.core.templates import render
 from agent_core.person.nobody import Nobody
@@ -314,5 +319,35 @@ def pty_job(tmp_path, make_instance):
         finally:
             os.close(master)
         return out, _record(run_dir)
+
+    return run
+
+
+# --- walking a sequence --------------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def seq_instance():
+    return load_instance(SEQUENCES / "instance.yaml", FolderResources(SEQUENCES))
+
+
+@pytest.fixture
+def walk(seq_instance, tmp_path, monkeypatch):
+    """`await walk(name, facts, nodes=Nodes(), check=None, sequences=None)` walks a sequence of the sequences fixture
+    with the `none` journal. The checks and tools are the fixture's own; `sequences` adds or replaces sequences."""
+    monkeypatch.setenv("AGENT_CORE_RUN_DIR", str(tmp_path))
+    source = FunctionSource(seq_instance.functions, None, SEQUENCES)
+    tools = {name: (source, None) for name in seq_instance.functions}
+
+    async def real_check(checks, facts, owner):
+        return await unmet_check(checks, facts, owner=owner, tools=tools, functions=set(tools), fill=str)
+
+    async def call_tool(tool, args):
+        return await source.call(tool, args, {})
+
+    async def run(name, facts=None, *, nodes=None, check=None, sequences=None):
+        instance = dataclasses.replace(seq_instance, sequences={**seq_instance.sequences, **(sequences or {})})
+        runner = SequenceRunner(instance, nodes or Nodes(), call_tool, check or real_check)
+        return await provider("journal", "none")().start("run-1", runner.walk, name, dict(facts or {}))
 
     return run
