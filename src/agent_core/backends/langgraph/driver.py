@@ -7,6 +7,7 @@ so a run's state lives in the objects `drive` makes, never on the instance.
 The provider's key is read by its client from `ANTHROPIC_API_KEY`.
 """
 
+import anthropic
 from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, hook_config
 from langchain_anthropic import ChatAnthropic
@@ -14,7 +15,9 @@ from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import StructuredTool
 
-from agent_core.contracts import Brief, EndRun, Message, ModelResponse, NodeController, RunEnd, ToolCall, ToolSpec
+from agent_core.contracts import (
+    Brief, EndRun, Message, ModelResponse, NodeController, ProviderUnavailable, RunEnd, ToolCall, ToolSpec,
+)
 from agent_core.contracts.registry import register_backend
 
 from .settings import LangGraphSettings
@@ -95,7 +98,7 @@ class LangGraphBackend:
     async def drive(self, brief: Brief, controller: NodeController) -> RunEnd:
         relay = _Relay(controller)
         agent = create_agent(
-            ChatAnthropic(model=self._settings.MODEL, max_tokens=self._settings.MAX_TOKENS),
+            ChatAnthropic(model=self._settings.MODEL, max_tokens=self._settings.MAX_TOKENS, max_retries=self._settings.MAX_RETRIES),
             tools=[_proxy(t) for t in brief.tools],
             system_prompt=brief.instructions,
             middleware=[AnthropicPromptCachingMiddleware(), relay],
@@ -104,5 +107,8 @@ class LangGraphBackend:
         messages = [m for item in brief.handover for m in _render(item)]
         if brief.opening:
             messages.append(HumanMessage(brief.opening))
-        await agent.ainvoke({"messages": messages}, config={"recursion_limit": self._settings.RECURSION_LIMIT})
+        try:
+            await agent.ainvoke({"messages": messages}, config={"recursion_limit": self._settings.RECURSION_LIMIT})
+        except (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError) as e:
+            raise ProviderUnavailable(f"{type(e).__name__}: {e}") from e   # the core may run the node again (RTY-2a)
         return RunEnd(by_controller=relay.ended, said=relay.said)

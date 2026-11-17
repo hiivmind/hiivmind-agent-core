@@ -14,7 +14,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-langgraph = ["langchain>=1.5,<2", "langgraph>=1.2,<2", "langchain-anthropic>=1.7,<2"]
+langgraph = ["langchain>=1.5,<2", "langgraph>=1.2,<2", "langchain-anthropic>=1.7,<2", "anthropic>=2.8,<3"]
 
 [project.scripts]
 agent-core = "agent_core.core.cli:main"
