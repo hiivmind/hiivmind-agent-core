@@ -95,7 +95,7 @@ class LangGraphBackend:
     async def drive(self, brief: Brief, controller: NodeController) -> RunEnd:
         relay = _Relay(controller)
         agent = create_agent(
-            ChatAnthropic(model=self._settings.MODEL, max_tokens=self._settings.MAX_TOKENS),
+            ChatAnthropic(model=self._settings.MODEL, max_tokens=self._settings.MAX_TOKENS, max_retries=self._settings.MAX_RETRIES),
             tools=[_proxy(t) for t in brief.tools],
             system_prompt=brief.instructions,
             middleware=[AnthropicPromptCachingMiddleware(), relay],

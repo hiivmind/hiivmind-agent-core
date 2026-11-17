@@ -27,3 +27,28 @@ def test_the_langgraph_reply_limit_is_large_enough_for_a_long_exit_and_the_varia
     assert settings().MAX_TOKENS == 16000
     monkeypatch.setenv("AGENT_CORE_LANGGRAPH_MAX_TOKENS", "32000")
     assert settings().MAX_TOKENS == 32000
+
+
+async def test_the_langgraph_client_retries_eight_times_by_default_and_the_variable_sets_it(monkeypatch):   # RTY-1
+    pytest.importorskip("langchain")
+    import agent_core.backends.langgraph.driver as driver
+
+    cls, settings = backend("langgraph")
+    monkeypatch.delenv("AGENT_CORE_LANGGRAPH_MAX_RETRIES", raising=False)
+    assert settings().MAX_RETRIES == 8
+    monkeypatch.setenv("AGENT_CORE_LANGGRAPH_MAX_RETRIES", "3")
+    models = []
+
+    class Stopped(Exception):
+        pass
+
+    def kept(model, **_):
+        models.append(model)
+        raise Stopped
+
+    monkeypatch.setattr(driver, "create_agent", kept)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-used")
+    brief = type("Brief", (), {"tools": (), "instructions": "", "handover": (), "opening": None})()
+    with pytest.raises(Stopped):
+        await cls(settings()).drive(brief, controller=None)
+    assert models[0].max_retries == 3
