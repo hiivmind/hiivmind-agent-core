@@ -8,12 +8,14 @@ import asyncio
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass, field
 
+from agent_core.contracts.errors import ProviderUnavailable
 from agent_core.contracts.journal import Steps
 from agent_core.core.instance import Instance
 
 RunNode = Callable[..., Awaitable[dict]]   # (node, inputs, *, asks=True) -> the node's result, as Run.run_node gives it
 CallTool = Callable[[str, dict], Awaitable[object]]       # (tool, args) -> its value, as Run.call gives it
 Check = Callable[[Sequence[dict], dict, str], Awaitable[tuple[dict | None, dict]]]   # (checks, facts, owner), as unmet_check
+RETRY_PAUSE = 60   # seconds a fan-out waits before it runs again a run the provider refused (RTY-2)
 
 
 class SequenceError(RuntimeError):
@@ -162,11 +164,17 @@ class _Walk:
 
     async def _caught(self, node: str, inputs: dict) -> dict:
         """A run asks nobody (§4.3). A run that raises is a failed item, so the journal records a result, not an
-        exception."""
+        exception. A run the provider refused is run once more after `RETRY_PAUSE`, inside the same step (RTY-2, RTY-3)."""
         try:
             return await self.runner.run_node(node, inputs, asks=False)
         except Exception as e:
-            return {"outcome": "failed", "outputs": {"reason": f"{type(e).__name__}: {e}"}}
+            if not isinstance(e.__cause__, ProviderUnavailable) and not isinstance(e, ProviderUnavailable):
+                return {"outcome": "failed", "outputs": {"reason": f"{type(e).__name__}: {e}"}}
+        await asyncio.sleep(RETRY_PAUSE)
+        try:
+            return await self.runner.run_node(node, inputs, asks=False)
+        except Exception as e:
+            return {"outcome": "failed", "outputs": {"reason": f"{type(e).__name__}: {e} (run twice)"}}
 
 
 def _no_transition(node: str, outcome: str) -> str:

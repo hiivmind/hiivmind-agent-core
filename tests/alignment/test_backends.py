@@ -52,3 +52,30 @@ async def test_the_langgraph_client_retries_eight_times_by_default_and_the_varia
     with pytest.raises(Stopped):
         await cls(settings()).drive(brief, controller=None)
     assert models[0].max_retries == 3
+
+
+@pytest.mark.parametrize("raised, expected", [("refusal", "ProviderUnavailable"), ("other", "ValueError")])
+async def test_a_provider_refusal_reaches_the_core_as_provider_unavailable(monkeypatch, raised, expected):   # RTY-2a
+    pytest.importorskip("langchain")
+    import anthropic
+    import httpx
+
+    import agent_core.backends.langgraph.driver as driver
+    from agent_core.contracts.errors import ProviderUnavailable
+
+    response = httpx.Response(429, request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+    error = anthropic.RateLimitError("concurrent connections", response=response, body=None) if raised == "refusal" else ValueError("x")
+
+    class Agent:
+        async def ainvoke(self, *_, **__):
+            raise error
+
+    monkeypatch.setattr(driver, "create_agent", lambda *_, **__: Agent())
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-used")
+    cls, settings = backend("langgraph")
+    brief = type("Brief", (), {"tools": (), "instructions": "", "handover": (), "opening": None})()
+    with pytest.raises((ProviderUnavailable, ValueError)) as caught:
+        await cls(settings()).drive(brief, controller=None)
+    assert type(caught.value).__name__ == expected
+    if raised == "refusal":
+        assert caught.value.__cause__ is error

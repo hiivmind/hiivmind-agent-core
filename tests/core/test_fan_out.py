@@ -5,6 +5,9 @@ import asyncio
 import pytest
 from walking import Nodes, names
 
+import agent_core.core.sequences as sequences
+from agent_core.contracts.errors import ProviderUnavailable, ToolServerError
+from agent_core.core.node_runner import NodeRunError
 from agent_core.core.sequences import SequenceError
 
 
@@ -74,6 +77,74 @@ async def test_a_run_that_raises_is_a_failed_item(walk):                        
     nodes = Nodes(scan=by_item(b1=RuntimeError("the server died")))
     result = await walk("fan", {"batches": [1, 2]}, nodes=nodes, sequences=fan())
     assert result["facts"]["scans_failures"] == [{"item": 1, "outcome": "failed", "reason": "RuntimeError: the server died"}]
+    assert result["facts"]["scans"] == [{"entries": [2]}]
+
+
+def refused(times: int, then=None):
+    """A scan that raises a provider refusal, as `node_runner` wraps it, `times` times, then gives `then` (done by default)."""
+    count = {"runs": 0}
+
+    def result(inputs):
+        count["runs"] += 1
+        if count["runs"] <= times:
+            try:
+                raise ProviderUnavailable("RateLimitError: concurrent connections")
+            except ProviderUnavailable as e:
+                raise NodeRunError(f"scan#{count['runs']}: ProviderUnavailable: {e}") from e
+        if isinstance(then, Exception):
+            raise then
+        return then or {"outcome": "done", "outputs": {"entries": [inputs["batch"]]}}
+
+    return result, count
+
+
+@pytest.fixture
+def no_pause(monkeypatch):
+    monkeypatch.setattr(sequences, "RETRY_PAUSE", 0)
+
+
+async def test_a_run_the_provider_refused_is_run_once_more_and_counts_as_done(walk, no_pause):   # RTY-2, RTY-3
+    scan, count = refused(1)
+    result = await walk("fan", {"batches": [1]}, nodes=Nodes(scan=scan), sequences=fan())
+    assert count["runs"] == 2 and result["facts"]["scans"] == [{"entries": [1]}] and result["facts"]["scans_failures"] == []
+    assert result["trail"] == [{"step": 1, "name": "scan[1]", "outcome": "done"}, {"step": None, "name": "scan", "outcome": "done"}]
+
+
+async def test_a_run_refused_twice_is_a_failure_that_says_so(walk, no_pause):                    # RTY-5
+    scan, count = refused(2)
+    result = await walk("fan", {"batches": [1]}, nodes=Nodes(scan=scan), sequences=fan())
+    [failure] = result["facts"]["scans_failures"]
+    assert count["runs"] == 2 and failure["outcome"] == "failed"
+    assert failure["reason"] == "NodeRunError: scan#2: ProviderUnavailable: RateLimitError: concurrent connections (run twice)"
+
+
+async def test_a_run_that_exits_failed_is_not_run_again(walk, no_pause):                          # RTY-4
+    nodes = Nodes(scan={"outcome": "failed", "outputs": {"reason": "unreadable"}})
+    await walk("fan", {"batches": [1]}, nodes=nodes, sequences=fan())
+    assert nodes.names == ["scan"]
+
+
+async def test_a_run_that_raises_another_error_is_not_run_again(walk, no_pause):                  # RTY-2a
+    def recursion(inputs):
+        try:
+            raise RuntimeError("Recursion limit of 120 reached")
+        except RuntimeError as e:
+            raise NodeRunError(f"scan#1: GraphRecursionError: {e}") from e
+
+    nodes = Nodes(scan=recursion)
+    result = await walk("fan", {"batches": [1]}, nodes=nodes, sequences=fan())
+    assert nodes.names == ["scan"]
+    assert result["facts"]["scans_failures"][0]["reason"] == "NodeRunError: scan#1: GraphRecursionError: Recursion limit of 120 reached"
+
+
+async def test_any_error_of_the_second_run_is_a_failure_of_the_item(walk, no_pause):              # RTY-5
+    scan, _ = refused(1, then=ToolServerError("the files server is gone"))
+
+    def by_batch(inputs):
+        return scan(inputs) if inputs["batch"] == 1 else {"outcome": "done", "outputs": {"entries": [2]}}
+
+    result = await walk("fan", {"batches": [1, 2]}, nodes=Nodes(scan=by_batch), sequences=fan())
+    assert result["facts"]["scans_failures"] == [{"item": 1, "outcome": "failed", "reason": "ToolServerError: the files server is gone (run twice)"}]
     assert result["facts"]["scans"] == [{"entries": [2]}]
 
 
