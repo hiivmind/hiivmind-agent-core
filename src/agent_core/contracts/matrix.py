@@ -7,7 +7,9 @@ from typing import Literal
 
 
 class Feature(Enum):
-    """A feature of the wiring matrix: the value is the id and a title."""
+    """A feature of the wiring matrix: the value is the id; `title` names it."""
+
+    title: str
 
     F1 = ("F1", "loop")
     F2 = ("F2", "tool calling")
@@ -34,13 +36,15 @@ class Feature(Enum):
     F23 = ("F23", "sub-agents")
     F24 = ("F24", "call limits")
 
-    @property
-    def id(self) -> str:
-        return self.value[0]
+    def __new__(cls, id: str, title: str) -> Feature:
+        member = object.__new__(cls)
+        member._value_ = id
+        member.title = title
+        return member
 
     @property
-    def title(self) -> str:
-        return self.value[1]
+    def id(self) -> str:
+        return self.value
 
 
 @dataclass(frozen=True)

@@ -1,3 +1,10 @@
+import dataclasses
+import inspect
+
+import pytest
+
+from agent_core.contracts.context import HandoverRequest
+from agent_core.contracts.person import Person
 from agent_core.contracts.errors import FeatureNotSupported, ToolServerError
 from agent_core.contracts.matrix import Entry, Feature
 from agent_core.contracts.topology import NodeContract
@@ -28,3 +35,21 @@ def test_tool_server_error_message():
     e = ToolServerError("srv", "t", "boom")
     assert (e.server, e.tool) == ("srv", "t")
     assert str(e) == "tool server `srv` did not answer the call to `t`: boom"
+
+
+def test_feature_value_is_its_id_and_looks_up_by_id():
+    assert Feature.F1.value == "F1"
+    assert Feature("F19") is Feature.F19 and Feature("F19").title == "streaming"
+
+
+def test_handover_request_is_frozen():
+    async def summarise(a: str, b: str) -> str:
+        return a + b
+    h = HandoverRequest((), {}, "n", {}, NodeContract("n", (), (), ("done",)), summarise)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        h.node = "x"
+
+
+def test_person_ask_takes_a_label():
+    p = inspect.signature(Person.ask).parameters
+    assert list(p) == ["self", "question", "label"] and p["label"].default == ""
