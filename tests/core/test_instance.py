@@ -29,7 +29,8 @@ def test_a_node_with_no_allowed_tools_line_has_none(instance):          # NODE-6
     assert instance.nodes["plain"].allowed_tools == ()
 
 
-def test_a_node_file_is_read_from_its_path(sequences):
+def test_a_node_file_is_read_from_its_path(instance, sequences):
+    assert instance.nodes["plain"].file == "nodes/plain.md"
     assert sequences.nodes["wrap"].file == "nodes/wrap.md"
 
 
@@ -205,4 +206,18 @@ def test_a_server_with_neither_or_both_command_and_url_is_refused(broken, entry)
         "{command: python, args: [../servers/flaky_server.py]}", entry)
     broken("instance.yaml", text)
     with pytest.raises(InstanceError, match=r"instance\.yaml.*servers\.web"):
+        load(broken.root)
+
+
+def test_a_fragment_may_not_name_a_fragment_as_a_target(broken_sequences):
+    text = (broken_sequences.root / "topology.yaml").read_text().replace("wrap: {done: close,", "wrap: {done: tail,")
+    broken_sequences("topology.yaml", text)
+    with pytest.raises(InstanceError, match=r"topology\.yaml: no node `tail`"):
+        load(broken_sequences.root)
+
+
+@pytest.mark.parametrize("entry, missing", [("{tool: ready}", "message"), ("{message: m}", "tool")])
+def test_a_malformed_precondition_names_the_file_and_the_key(broken, entry, missing):
+    broken.frontmatter("plain", preconditions=f"[{entry}]")
+    with pytest.raises(InstanceError, match=rf"nodes/plain\.md.*preconditions\.0.*'{missing}'"):
         load(broken.root)

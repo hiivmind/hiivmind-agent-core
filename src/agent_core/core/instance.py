@@ -151,12 +151,14 @@ def _node(resources: ResourceSource, name: str, file: str) -> NodeDef:
 class _Targets:
     """Turns the YAML of a transition target into a contract value, checking the names it uses."""
 
-    def __init__(self, file: str, nodes: Mapping[str, NodeDef], fragments: Mapping[str, dict]):
+    def __init__(self, file: str, nodes: Mapping[str, NodeDef], fragments: Mapping[str, dict] | None):
+        """`fragments` None: a fragment's own targets, which name nodes only."""
         self.file, self.nodes, self.fragments = file, nodes, fragments
 
     def step_name(self, name: str) -> str:
-        if name not in self.nodes and name not in self.fragments:
-            raise InstanceError(f"{self.file}: no node or fragment `{name}`")
+        if name not in self.nodes and name not in (self.fragments or {}):
+            what = "node" if self.fragments is None else "node or fragment"
+            raise InstanceError(f"{self.file}: no {what} `{name}`")
         return name
 
     def fan_out(self, entry: dict) -> FanOut:
@@ -227,7 +229,7 @@ def load_instance(instance_yaml: Path, resources: ResourceSource) -> Instance:
     topology = Topology(
         nodes={name: n.contract for name, n in nodes.items()},
         sequences=_sequences(raw.get("sequences") or {}, targets),
-        fragments=_fragments(raw_fragments, targets),
+        fragments=_fragments(raw_fragments, _Targets(entry, nodes, None)),
     )
     return Instance(
         root=Path(instance_yaml).resolve().parent,
