@@ -1,7 +1,5 @@
 import ast
-import io
 import re
-import tokenize
 import tomllib
 from pathlib import Path
 
@@ -142,33 +140,35 @@ def test_the_layering_walk_sees_files():
     assert {p.name for p in PKG.iterdir() if p.is_dir()} >= {"contracts", "core", "helpers", "backends", "journals", "person", "resources", "context", "assets"}
 
 
-def f22_span(source: str) -> tuple[int, int] | None:
-    """Lines of `F22 = ...` in the class `Feature`: the one place F22's title may say `skills`."""
+def f22_title(source: str) -> ast.Constant | None:
+    """The string constant "skills" in the value of `F22 = ...` in the class `Feature`: F22's title, the one allowed use."""
     for cls in ast.parse(source).body:
         if isinstance(cls, ast.ClassDef) and cls.name == "Feature":
             for node in cls.body:
                 if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "F22" for t in node.targets):
-                    return node.lineno, node.end_lineno
+                    for sub in ast.walk(node.value):
+                        if isinstance(sub, ast.Constant) and sub.value == "skills":
+                            return sub
     return None
 
 
+def blank(source: str, node: ast.Constant) -> str:
+    """The source with exactly the node's span replaced by spaces (columns are UTF-8 byte offsets)."""
+    lines = [line.encode() for line in source.splitlines(keepends=True)]
+    for n in range(node.lineno, node.end_lineno + 1):
+        start = node.col_offset if n == node.lineno else 0
+        end = node.end_col_offset if n == node.end_lineno else len(lines[n - 1])
+        lines[n - 1] = lines[n - 1][:start] + b" " * (end - start) + lines[n - 1][end:]
+    return b"".join(lines).decode()
+
+
 def skill_violations(text: str, is_matrix: bool) -> list[str]:
-    """Uses of the word `skill`. In matrix.py, string constants inside the F22 assignment are exempt;
-    its comments and names, and every other line, are not."""
+    """Uses of the word `skill`; in matrix.py, F22's title constant alone is exempt."""
     bad = ["SKILL.md"] if "SKILL.md" in text else []
-    span = f22_span(text) if is_matrix else None
-    lines = text.splitlines()
-    for number, line in enumerate(lines, 1):
-        if span and span[0] <= number <= span[1]:
-            continue
-        if re.search(r"skill", line, re.I):
-            bad.append(line)
-    if span:
-        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
-            if span[0] <= tok.start[0] <= span[1] and tok.type in (tokenize.COMMENT, tokenize.NAME):
-                if re.search(r"skill", tok.string, re.I):
-                    bad.append(tok.string)
-    return bad
+    title = f22_title(text) if is_matrix else None
+    if title:
+        text = blank(text, title)
+    return bad + [line for line in text.splitlines() if re.search(r"skill", line, re.I)]
 
 
 def test_nothing_calls_a_node_a_skill():  # LNG-1
@@ -184,6 +184,8 @@ def test_the_language_gate_allows_only_f22s_title():
     assert skill_violations('class Feature:\n    F22 = Entry(\n        "F22",\n        "skills")\n', True) == []
     assert skill_violations('class Feature:\n    node_directory = "skills"  # F22\n', True) != []
     assert skill_violations('class Feature:\n    F22 = Entry("F22", "skills")  # skills\n', True) != []
+    assert skill_violations('class Feature:\n    F22 = Entry("F22", "skills"); node_directory = "skills"\n', True) != []
+    assert skill_violations('class Feature:\n    F22 = Entry("F22", "skills", "skills")\n', True) != []
     assert skill_violations(ok + '    F23 = "skills"\n', True) != []
     assert skill_violations('class Other:\n    F22 = "skills"\n', True) != []
     assert skill_violations('F22 = "skills"\n', True) != []
