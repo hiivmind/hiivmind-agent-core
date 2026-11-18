@@ -33,8 +33,17 @@ sequences:
     start: plain
     transitions:
       plain: {done: end, failed: end}
+  status_run:
+    description: Run the status node.
+    start: status
+    transitions:
+      status: {done: end, failed: end}
 """
 ASK = {"asker": [[("ask", {"question": "Which colour?"})], [("exit", {"outcome": "done", "outputs": {"colour": "red"}})]]}
+STATUS = {"status": [
+    [("tools__shell", {"command": "echo status"})],
+    [("exit", {"outcome": "done", "outputs": {"status_report": "ok"}})],
+]}
 PLAIN = {"plain": [[("exit", {"outcome": "done", "outputs": {"done_work": "plain-work"}})]]}
 
 
@@ -336,15 +345,64 @@ async def test_open_and_close_bring_the_instances_directory_onto_the_path_and_ba
     assert sys.path == before
 
 
-async def test_a_run_sets_the_instance_and_run_directory_and_close_gives_them_back(toy, open_harness, tmp_path, monkeypatch):
+async def test_a_run_sets_the_instance_and_run_directory_and_gives_them_back_when_it_ends(toy, open_harness, tmp_path, monkeypatch):
     monkeypatch.delenv("AGENT_CORE_RUN_DIR", raising=False)
     monkeypatch.setenv("AGENT_CORE_INSTANCE", "before")
-    toy(PLAIN)
+    backend = toy(PLAIN, raises={"locate": RuntimeError("boom")})
     harness = open_harness(FIXTURE, **spike())
     await harness.nodes.run("plain", {})
-    assert (os.environ["AGENT_CORE_INSTANCE"], os.environ["AGENT_CORE_RUN_DIR"]) == (str(FIXTURE.resolve()), str(tmp_path / "runs"))
-    await harness.close()
+    assert backend.environment == [
+        {"AGENT_CORE_INSTANCE": str(FIXTURE.resolve()), "AGENT_CORE_RUN_DIR": str(tmp_path / "runs")}
+    ]
     assert os.environ["AGENT_CORE_INSTANCE"] == "before" and "AGENT_CORE_RUN_DIR" not in os.environ
+    with pytest.raises(RuntimeError):   # a run that raises gives them back too
+        await harness.nodes.run("locate", {"source": "polars"})
+    assert os.environ["AGENT_CORE_INSTANCE"] == "before" and "AGENT_CORE_RUN_DIR" not in os.environ
+
+
+async def test_a_harness_that_closes_after_another_opened_leaves_that_harness_its_own_run_directory(toy, open_harness, tmp_path):
+    toy({**PLAIN, **STATUS})
+    first = open_harness(FIXTURE, **spike(runs=tmp_path / "a"))
+    await first.nodes.run("plain", {})
+    second = open_harness(FIXTURE, **spike(runs=tmp_path / "b"))
+    await first.close()
+    await second.nodes.run("status", {})
+    assert "echo status" in (tmp_path / "b" / "tool_calls.jsonl").read_text()
+    assert not (tmp_path / "a" / "tool_calls.jsonl").exists()
+
+
+async def test_each_run_holds_its_own_servers_which_work_in_its_own_directory_and_close_when_it_ends(toy, open_harness, asking, tmp_path):   # TOOL-15
+    backend = toy(STATUS)
+    harness = open_harness(asking.root, **spike())
+    first, second = await harness.sequences.run("status_run", {}), await harness.sequences.run("status_run", {})
+    assert first.end == second.end == "done" and first.run_id != second.run_id
+    for result in (first, second):
+        lines = (tmp_path / "runs" / result.run_id / "tool_calls.jsonl").read_text().splitlines()
+        assert [json.loads(line)["args"] for line in lines] == [{"command": "echo status"}]   # this run's server, this run's dir
+    assert len(backend.sources) == 2 and all(source.closed for source in backend.sources)
+
+
+async def test_the_servers_of_a_node_run_that_raises_are_closed_and_the_next_run_makes_its_own(toy, open_harness):
+    backend = toy(PLAIN, raises={"locate": RuntimeError("boom")})
+    harness = open_harness(FIXTURE, **spike())
+    with pytest.raises(RuntimeError):
+        await harness.nodes.run("locate", {"source": "polars"})
+    assert [source.closed for source in backend.sources] == [True]
+    await harness.nodes.run("plain", {})
+    assert [source.closed for source in backend.sources] == [True, True]
+
+
+async def test_a_setting_changed_between_two_runs_reaches_the_second_run(toy, open_harness, tmp_path):   # TOOL-12
+    file = tmp_path / "now.yaml"
+    file.write_text("CORPUS_NAME: one\nCORPUS_PATH: /tmp/one\nCORPUS_REPO: example/one\n")
+    toy({"locate": [[("locate", {"source": "polars"})], [("exit", {"outcome": "done", "outputs": {}})]]})
+    harness = open_harness(FIXTURE, settings=[file])
+    assert (await harness.nodes.run("locate", {"source": "polars"})).outputs == {"path": "/tmp/one/polars"}
+    file.write_text("CORPUS_NAME: two\nCORPUS_PATH: /tmp/two\nCORPUS_REPO: example/two\n")
+    assert (await harness.nodes.run("locate", {"source": "polars"})).outputs == {"path": "/tmp/two/polars"}
+    file.write_text("CORPUS_NAME: three\n")   # a file that no longer gives every setting: the run cannot start
+    with pytest.raises(RunCannotStart, match="settings: missing or invalid: CORPUS_REPO"):
+        await harness.nodes.run("locate", {"source": "polars"})
 
 
 async def test_close_closes_the_backends_it_made_and_the_servers(toy, open_harness):
@@ -380,20 +438,23 @@ async def test_a_resource_source_registered_through_extensions_serves_the_load_v
     assert returned.text == "the client's anything.md" and asked == [FIXTURE.resolve()]
 
 
-async def test_a_person_is_a_person_or_a_name_resolved_when_a_run_starts(toy, open_harness):
+async def test_a_person_is_a_person_or_a_name_the_registry_knows_checked_when_the_harness_opens(toy, open_harness):
     toy({"asker": ASK["asker"]})
     person = ToyPerson("blue", pause=0)
     by_object = open_harness(FIXTURE, **spike(person=person))
     assert (await by_object.nodes.run("asker", {"who": "polars"})).exit == "done"
     assert person.asked == [("asker#1 polars", "Which colour?")]
-    named = open_harness(FIXTURE, **spike(person="mine"))
+    with pytest.raises(RunCannotStart, match="no person `ghost`; persons are: nobody, terminal"):
+        open_harness(FIXTURE, **spike(person="ghost"))
+
+
+async def test_a_person_a_client_registers_under_a_known_name_is_the_one_the_next_run_asks(toy, open_harness):   # FAC-3
+    toy({"asker": ASK["asker"]})
+    named = open_harness(FIXTURE, **spike(person="nobody"))
     other = ToyPerson("green", pause=0)
-    named.extensions.register("person", "mine", lambda: other)
+    named.extensions.register("person", "nobody", lambda: other)
     await named.nodes.run("asker", {"who": "ibis"})
     assert other.asked == [("asker#1 ibis", "Which colour?")]
-    ghost = open_harness(FIXTURE, **spike(person="ghost"))
-    with pytest.raises(RunCannotStart, match="no person `ghost`; persons are: nobody, terminal"):
-        await ghost.nodes.run("asker", {"who": "polars"})
 
 
 async def test_an_extension_of_an_unknown_kind_is_refused(toy, open_harness):
@@ -507,7 +568,7 @@ async def test_a_sequence_the_instance_does_not_have_cannot_start(toy, open_harn
     harness = open_harness(asking.root, **spike())
     with pytest.raises(RunCannotStart) as e:
         await harness.sequences.run("nope", {})
-    assert str(e.value) == "no sequence `nope`; the sequences are: ask_all, plain_run"
+    assert str(e.value) == "no sequence `nope`; the sequences are: ask_all, plain_run, status_run"
     assert backend.units == []
 
 
@@ -522,7 +583,21 @@ async def test_a_run_that_raises_ends_failed_with_the_error_in_the_record(toy, o
     toy(raises={"plain": RuntimeError("boom")})
     result = await open_harness(asking.root, **spike()).sequences.run("plain_run", {})
     assert (result.end, result.summary, result.facts) == ("failed", "RuntimeError: boom", {})
+    assert result.steps == [{"step": 1, "name": "plain", "outcome": None}]   # the step that was running
     assert (result.record.status, result.record.end_state, result.record.summary) == ("failed", "failed", "RuntimeError: boom")
+
+
+async def test_a_run_that_raised_keeps_the_steps_it_took_and_the_facts_it_had(toy, open_harness):   # RESUME-2, v0's regression
+    toy({
+        "migrate": [[("exit", {"outcome": "done", "outputs": {"entry_count": 3}})]],
+        "index": [[("exit", {"outcome": "done", "outputs": {"entries": ["e1"]}})]],
+    }, raises={"verify": RuntimeError("boom")})
+    result = await open_harness(SEQUENCES).sequences.run("chain", {"scan_results": [["e1"]]})
+    steps = [{"step": 1, "name": "migrate", "outcome": "done"}, {"step": 2, "name": "index", "outcome": "done"},
+             {"step": 3, "name": "verify", "outcome": None}]
+    facts = {"scan_results": [["e1"]], "entry_count": 3, "entries": ["e1"]}
+    assert (result.end, result.summary, result.steps, result.facts) == ("failed", "RuntimeError: boom", steps, facts)
+    assert (result.record.steps, result.record.facts, result.record.status) == (steps, facts, "failed")
 
 
 async def test_an_unreachable_tool_server_raises_from_a_node_run_and_is_named_in_the_record_of_a_sequence(toy, open_harness, asking):   # TOOL-11e

@@ -1,10 +1,11 @@
 """What is kept of a run, for its record (JOB-9a, SCOPE-7): the notes of its node runs, its failures, and the record."""
 
+import json
 from collections.abc import Collection, Iterable, Mapping
 
 from pydantic import SecretBytes, SecretStr
 
-from agent_core.contracts.events import Event, ModelResponded, NodeStarted
+from agent_core.contracts.events import Event, ModelRequested, ModelResponded, NodeStarted, RequestPart
 from agent_core.contracts.facade import RunRecord
 from agent_core.contracts.unit import UnitResult
 from agent_core.contracts.values import NodeNote, Usage
@@ -16,15 +17,26 @@ def _total(counts: list[int | None]) -> int | None:
     return None if any(c is None for c in counts) else sum(counts)
 
 
+def _length(part: RequestPart) -> int:
+    """The characters of a request part: its text, and what each message of it says, returns and calls with."""
+    return len(part.text) + sum(
+        len(m.text) + len(m.result) + (len(json.dumps(m.args)) if m.args else 0) for m in part.messages
+    )
+
+
 def notes(events: Iterable[Event], labels: Collection[str]) -> tuple[NodeNote, ...]:
     """The note of each node run in `labels` that started, in that order: where each part of its instructions came from
     and how long it was, the tools it was offered, how many model calls it made and what they cost. A request is not
-    kept: the note holds the lengths of the parts of the node's instructions only (Q4)."""
+    kept: the note holds the kind and the length of each part of each request, and where the parts of the node's
+    instructions came from and how long they were, never what any of them said (Q4)."""
     started: dict[str, NodeStarted] = {}
     responses: dict[str, list[Usage]] = {}
+    requests: dict[str, list[tuple[tuple[str, int], ...]]] = {}
     for event in events:
         if isinstance(event, NodeStarted):
             started[event.label] = event
+        elif isinstance(event, ModelRequested):
+            requests.setdefault(event.label, []).append(tuple((p.kind, _length(p)) for p in event.parts))
         elif isinstance(event, ModelResponded):
             responses.setdefault(event.label, []).append(event.response.usage)
     found = []
@@ -33,7 +45,10 @@ def notes(events: Iterable[Event], labels: Collection[str]) -> tuple[NodeNote, .
             continue
         used = responses.get(label, [])
         usage = Usage(_total([u.sent for u in used]), _total([u.cache_read for u in used]), _total([u.cache_written for u in used]))
-        found.append(NodeNote(label, started[label].node, started[label].parts, started[label].tools, len(used), usage))
+        found.append(NodeNote(
+            label, started[label].node, started[label].parts, started[label].tools, len(used), usage,
+            tuple(requests.get(label, ())),
+        ))
     return tuple(found)
 
 
@@ -70,11 +85,16 @@ def build(
     run_id: str,
     result: WalkResult | None = None,
     error: str | None = None,
+    progress: Mapping | None = None,
 ) -> RunRecord:
     """The record of a sequence run that ended with `result`, or raised `error` (`Type: message`). `labels` are the node
-    runs of this process: a resumed run's finished steps are in `steps`, not in `notes`."""
+    runs of this process: a resumed run's finished steps are in `steps`, not in `notes`. A run that raised keeps what the
+    walk had reached, from `progress`: the steps it took (the one that was running with no outcome) and its facts."""
     if error is not None:
-        status, end_state, summary, steps, facts = "failed", "failed", error, [], None
+        progress = progress or {}
+        status, end_state, summary = "failed", "failed", error
+        steps = list(progress.get("trail", []))
+        facts = dict(progress["facts"]) if progress.get("facts") is not None else None
     else:
         status = "failed" if result["end"] == "failed" else "ok"
         end_state, summary, steps, facts = result["end"], result["summary"], result["trail"], result["facts"]

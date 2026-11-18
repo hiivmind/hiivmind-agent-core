@@ -31,6 +31,7 @@ class Macro:
     ):
         self._topology, self._backends, self._default = topology, backends, default_backend
         self._make_unit, self._journal, self._call_tool, self._check = make_unit, journal, call_tool, check
+        self.progress: dict = {}   # the live `trail` and `facts` of the walk in this process, whether or not it ends
 
     def _walk(self, run_id: str, resuming: bool):
         """The walk the journal runs. On a resume every step runs with intent `continue` unless the walk says `fresh`: a
@@ -47,7 +48,7 @@ class Macro:
 
         async def walk(steps: Steps, name: str, facts: dict) -> WalkResult:
             port = WalkPort(self._topology, run_step, self._call_tool, self._check, steps)
-            return await walker.walk_sequence(port, name, facts)
+            return await walker.walk_sequence(port, name, facts, self.progress)
 
         return walk
 

@@ -185,9 +185,14 @@ class _Walk:
             return _failed(f"{type(e).__name__}: {e} (run twice)")
 
 
-async def walk_sequence(port: WalkPort, name: str, facts: dict) -> WalkResult:
-    """Walk the sequence `name` from `facts`. Returns its end state, the steps it took, the facts and the summary."""
+async def walk_sequence(port: WalkPort, name: str, facts: dict, progress: dict | None = None) -> WalkResult:
+    """Walk the sequence `name` from `facts`. Returns its end state, the steps it took, the facts and the summary.
+
+    `progress`, when given, is filled with the live `trail` and `facts`, so that a caller whose walk raised can still
+    say which steps it took and what it had found (RESUME-2)."""
     walk, facts = _Walk(port), dict(facts)
+    if progress is not None:
+        progress["trail"], progress["facts"] = walk.trail, facts
     end, _, summary, _ = await walk.sequence(name, facts)
     return {"end": end, "trail": walk.trail, "facts": facts, "summary": summary}
 

@@ -40,11 +40,28 @@ def test_notes_are_those_of_the_labels_asked_for_in_their_order_and_only_of_runs
     assert [n.label for n in notes(events, ["a#3", "a#1", "c#4"])] == ["a#3", "a#1"]   # c#4 never started
 
 
-def test_a_note_keeps_no_request_only_the_lengths_of_the_parts_the_node_started_with():  # Q4
-    request = ModelRequested("scan#1", (RequestPart("conversation", (Message("user", "a very secret question"),)),))
-    events = (started("scan#1"), request, responded("scan#1", 7), NodeEnded("scan#1", "scan", "done", None))
+def test_a_note_keeps_the_kind_and_length_of_each_part_of_each_request_and_never_their_content():  # Q4
+    first = ModelRequested("scan#1", (
+        RequestPart("instructions", text="be brief"),
+        RequestPart("conversation", (Message("user", "a very secret question"),)),
+    ))
+    second = ModelRequested("scan#1", (
+        RequestPart("tools", text='[{"name": "exit"}]'),
+        RequestPart("conversation", (Message("call", call_id="c1", name="ask", args={"q": "x"}, result="the answer"),)),
+    ))
+    events = (started("scan#1"), first, responded("scan#1", 7), second, NodeEnded("scan#1", "scan", "done", None))
     [note] = notes(events, ["scan#1"])
-    assert note.parts == PARTS and "secret" not in repr(note)
+    assert note.parts == PARTS
+    assert note.requests == (
+        (("instructions", 8), ("conversation", 22)),
+        (("tools", 18), ("conversation", len("the answer") + len('{"q": "x"}'))),
+    )
+    assert "secret" not in repr(note) and "be brief" not in repr(note)
+
+
+def test_a_run_with_no_request_has_none():
+    [note] = notes((started("scan#1"),), ["scan#1"])
+    assert note.requests == ()
 
 
 def test_a_failed_result_is_kept_as_the_node_with_what_the_result_said():  # JOB-9a
@@ -94,7 +111,13 @@ def test_a_sequence_that_ended_stopped_is_recorded_ok():  # JOB-17
     assert (made.status, made.end_state) == ("ok", "stopped")
 
 
-def test_a_run_that_raised_is_recorded_failed_with_the_error_and_no_facts():  # JOB-17
-    made = record(error="ToolServerError: tool server `web` did not answer")
+def test_a_run_that_raised_is_recorded_failed_with_the_error_and_what_the_walk_had_reached():  # JOB-17, RESUME-2
+    steps = [{"step": 1, "name": "scan", "outcome": "done"}, {"step": 2, "name": "index", "outcome": None}]
+    made = record(error="ToolServerError: tool server `web` did not answer", progress={"trail": steps, "facts": {"n": 1}})
     assert (made.status, made.end_state, made.summary) == ("failed", "failed", "ToolServerError: tool server `web` did not answer")
+    assert (made.steps, made.facts) == (steps, {"n": 1})
+
+
+def test_a_run_that_raised_before_its_walk_began_has_no_steps_and_no_facts():
+    made = record(error="boom", progress={})
     assert (made.steps, made.facts) == ([], None)

@@ -15,6 +15,16 @@ from agent_core.contracts.values import ModelResponse, ToolCall, Usage
 from agent_core.helpers.mcp import McpServers
 
 
+class Watched(McpServers):
+    """MCP servers that say whether they were closed."""
+
+    closed = False
+
+    async def close(self):
+        self.closed = True
+        await super().close()
+
+
 class Toy:
     """A backend. `scripts` maps a node to its steps: a step is a list of `[tool, args]` calls (one response), or a string
     (the model saying that, and stopping). `usage(n)` is what the n-th response of a unit reports; `raises` maps a node
@@ -29,6 +39,8 @@ class Toy:
         self.briefs: list[str] = []
         self.handovers: list[tuple] = []
         self.served: dict | None = None
+        self.sources: list[Watched] = []         # the server sources the harness had it make, one for each run
+        self.environment: list[dict] = []        # AGENT_CORE_* as each unit saw them
         self.closed = False
 
     def features(self):
@@ -36,7 +48,8 @@ class Toy:
 
     def servers(self, declared, root):
         self.served = dict(declared)
-        return McpServers(declared, dict(os.environ), root)
+        self.sources.append(Watched(declared, dict(os.environ), root))
+        return self.sources[-1]
 
     async def run_fragment(self, unit):
         raise NotImplementedError
@@ -46,6 +59,7 @@ class Toy:
 
     async def run_node(self, unit: Unit) -> UnitResult:
         self.units.append(unit)
+        self.environment.append({k: v for k, v in os.environ.items() if k.startswith("AGENT_CORE_")})
         if unit.name in self.raises:
             raise self.raises[unit.name]
         policy = await unit.start(unit.name, unit.inputs)

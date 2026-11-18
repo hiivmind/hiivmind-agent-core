@@ -53,6 +53,7 @@ class NodeNote:
     tools: tuple[str, ...]
     model_calls: int = 0
     usage: Usage = field(default_factory=lambda: Usage(0, 0, 0))
+    requests: tuple[tuple[tuple[str, int], ...], ...] = ()   # each model request: its parts' kind and length in characters, never their content
 
 
 @dataclass(frozen=True)
