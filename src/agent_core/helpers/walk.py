@@ -180,7 +180,7 @@ class _Walk:
         try:
             return await self.port.run_step(node, inputs, StepRef(number, item, 2), "fresh")
         except ProviderRefused as e:
-            return _failed(str(e))
+            return _failed(f"{e} (run twice)")   # RTY-5: any error of the second run
         except Exception as e:
             return _failed(f"{type(e).__name__}: {e} (run twice)")
 

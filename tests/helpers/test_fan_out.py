@@ -12,9 +12,10 @@ from agent_core.contracts.walk import StepRef
 from agent_core.helpers.walk import SequenceError
 
 
-def fan(cap=4, over="batches"):
-    """A one-step sequence `fan`: scan over `over`, into `scans`."""
-    return {"fan": SequenceDef("fan", "d", FanOut("scan", over, "batch", "scans", cap), {}, (),
+def fan(cap=None, over="batches"):
+    """A one-step sequence `fan`: scan over `over`, into `scans`; with no `cap`, the default of `FanOut` applies."""
+    extra = {} if cap is None else {"max_concurrency": cap}
+    return {"fan": SequenceDef("fan", "d", FanOut("scan", over, "batch", "scans", **extra), {}, (),
                                {"scan": {"done": END, "failed": END}})}
 
 
@@ -141,6 +142,19 @@ async def test_a_second_refusal_fails_the_item_with_run_twice(walk):            
     [failure] = result["facts"]["scans_failures"]
     assert count["runs"] == 2 and failure["outcome"] == "failed"
     assert failure["reason"] == "ProviderUnavailable: RateLimitError: concurrent connections (run twice)"
+
+
+async def test_a_refusal_after_a_first_unavailable_is_a_failure_that_says_run_twice(walk):   # RTY-5, MOD-4
+    reason = "the provider refused: insufficient_quota (no credit)"
+    runs = []
+
+    def scan(inputs):
+        runs.append(1)
+        raise ProviderUnavailable("busy") if len(runs) == 1 else ProviderRefused(reason)
+
+    result = await walk("fan", {"batches": [1]}, nodes=Nodes(scan=scan), sequences=fan())
+    assert len(runs) == 2
+    assert result["facts"]["scans_failures"] == [{"item": 1, "outcome": "failed", "reason": f"{reason} (run twice)"}]
 
 
 async def test_a_run_that_exits_failed_is_not_run_again(walk):                             # RTY-4
