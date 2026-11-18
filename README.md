@@ -102,3 +102,7 @@ The requirements and the architecture the code follows are in the `hiivmind-cent
 - Architecture design: `04.planning/hiivmind-agent-core/superpowers/specs/2026-11-14-agent-core-architecture-design.md`
 
 `docs/inspection-step-1a.md` answers the requirements that no test shows.
+
+## Rebuild in progress
+
+The rebuild is in progress on the branch `rebuild`. The old tree (v0) is under `v0/` and at the tag `v0-final`; the paragraphs above describe v0 until the cutover replaces them.
