@@ -1,5 +1,7 @@
 import ast
+import io
 import re
+import tokenize
 import tomllib
 from pathlib import Path
 
@@ -140,16 +142,32 @@ def test_the_layering_walk_sees_files():
     assert {p.name for p in PKG.iterdir() if p.is_dir()} >= {"contracts", "core", "helpers", "backends", "journals", "person", "resources", "context", "assets"}
 
 
+def f22_span(source: str) -> tuple[int, int] | None:
+    """Lines of `F22 = ...` in the class `Feature`: the one place F22's title may say `skills`."""
+    for cls in ast.parse(source).body:
+        if isinstance(cls, ast.ClassDef) and cls.name == "Feature":
+            for node in cls.body:
+                if isinstance(node, ast.Assign) and any(isinstance(t, ast.Name) and t.id == "F22" for t in node.targets):
+                    return node.lineno, node.end_lineno
+    return None
+
+
 def skill_violations(text: str, is_matrix: bool) -> list[str]:
-    """Uses of the word `skill` other than F22's title "skills" (one, on a line naming F22) in matrix.py."""
+    """Uses of the word `skill`. In matrix.py, string constants inside the F22 assignment are exempt;
+    its comments and names, and every other line, are not."""
     bad = ["SKILL.md"] if "SKILL.md" in text else []
-    allowed = 1 if is_matrix else 0
-    for line in text.splitlines():
-        if allowed and "F22" in line and '"skills"' in line:
-            line = line.replace('"skills"', "", 1)
-            allowed = 0
+    span = f22_span(text) if is_matrix else None
+    lines = text.splitlines()
+    for number, line in enumerate(lines, 1):
+        if span and span[0] <= number <= span[1]:
+            continue
         if re.search(r"skill", line, re.I):
             bad.append(line)
+    if span:
+        for tok in tokenize.generate_tokens(io.StringIO(text).readline):
+            if span[0] <= tok.start[0] <= span[1] and tok.type in (tokenize.COMMENT, tokenize.NAME):
+                if re.search(r"skill", tok.string, re.I):
+                    bad.append(tok.string)
     return bad
 
 
@@ -161,11 +179,15 @@ def test_nothing_calls_a_node_a_skill():  # LNG-1
 
 
 def test_the_language_gate_allows_only_f22s_title():
-    assert skill_violations('F22 = Feature("F22", "skills")', True) == []
-    assert skill_violations('node_directory = "skills"', True) != []
-    assert skill_violations('F22 = "skills"\nx = "skills"', True) != []
-    assert skill_violations('F22 = "skills"  # "skills"', True) != []
-    assert skill_violations('F22 = "skills"', False) != []
+    ok = 'class Feature:\n    F22 = Entry("F22", "skills")\n'
+    assert skill_violations(ok, True) == []
+    assert skill_violations('class Feature:\n    F22 = Entry(\n        "F22",\n        "skills")\n', True) == []
+    assert skill_violations('class Feature:\n    node_directory = "skills"  # F22\n', True) != []
+    assert skill_violations('class Feature:\n    F22 = Entry("F22", "skills")  # skills\n', True) != []
+    assert skill_violations(ok + '    F23 = "skills"\n', True) != []
+    assert skill_violations('class Other:\n    F22 = "skills"\n', True) != []
+    assert skill_violations('F22 = "skills"\n', True) != []
+    assert skill_violations(ok, False) != []
     assert skill_violations("see SKILL.md", False) != []
     assert skill_violations("a node's path", False) == []
 
