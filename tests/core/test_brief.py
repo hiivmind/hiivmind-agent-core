@@ -2,15 +2,16 @@ import pytest
 
 from agent_core.contracts.values import ToolSpec
 from agent_core.core.brief import JOB_VERBS, VERB_SPECS, make_brief
-from support import FolderSource
+from support import FolderSource, load
 
-LOOKUP = ToolSpec("lookup", "Look a key up.", {"type": "object"})
+FUNCTION = ToolSpec("lookup", "Look a key up.", {"type": "object"})
+SERVER = ToolSpec("tools__lookup", "Look a key up.", {"type": "object"})
 
 
 def brief(instance, name="plain", *, values=None, tools=None, inputs=None):
     return make_brief(
         instance, instance.nodes[name], inputs=inputs or {}, session={}, values={} if values is None else values,
-        settings=None, resources=FolderSource(instance.root), tools={"tools__lookup": LOOKUP} if tools is None else tools,
+        settings=None, resources=FolderSource(instance.root), tools={"tools__lookup": SERVER} if tools is None else tools,
     )
 
 
@@ -20,11 +21,17 @@ def test_the_job_verbs_and_their_specs():
     assert all(spec.name == name and spec.description and spec.schema["type"] == "object" for name, spec in VERB_SPECS.items())
 
 
-def test_the_brief_offers_the_job_verbs_then_the_nodes_tools(instance):                   # NODE-6a
-    _, tools, _ = brief(instance, "consult", tools={"tools__lookup": LOOKUP})
+def test_the_brief_offers_the_job_verbs_then_the_nodes_tools(instance, broken):           # NODE-6a
+    broken.frontmatter("consult", **{"allowed-tools": "[lookup]"})   # a function tool: declared, keyed and offered as `lookup`
+    _, tools, _ = brief(load(broken.root), "consult", tools={"lookup": FUNCTION})
     assert [t.name for t in tools] == [*JOB_VERBS, "lookup"]
     _, tools, _ = brief(instance)
     assert [t.name for t in tools] == list(JOB_VERBS)
+
+
+def test_a_server_tool_is_declared_keyed_and_offered_under_one_name(instance):
+    _, tools, _ = brief(instance, "consult", tools={"tools__lookup": SERVER})
+    assert [t.name for t in tools] == [*JOB_VERBS, "tools__lookup"]
 
 
 def test_the_brief_names_where_each_part_came_from(instance):                             # CTX-6
@@ -46,7 +53,6 @@ def test_the_node_part_begins_with_its_name_line_and_outcomes(instance):
 def test_the_brief_is_filled_once(instance, broken):                                       # TPL-4
     values = {"progress": "3 of 8"}
     broken.append("nodes/plain.md", "\nProgress: {{node.progress}}.\n")
-    from support import load
     inst = load(broken.root)
     text, _, _ = brief(inst, values=values)
     values["progress"] = "8 of 8"
