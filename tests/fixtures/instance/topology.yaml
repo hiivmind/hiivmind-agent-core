@@ -1,0 +1,39 @@
+nodes:
+  - {name: refresh, path: nodes/refresh.md}
+  - {name: status, path: nodes/status.md}
+  - {name: survey, path: nodes/survey.md}
+  - {name: shape, path: nodes/shape.md}
+  - {name: stuck, path: nodes/stuck.md}
+  - {name: halt, path: nodes/halt.md}
+  - {name: giveup, path: nodes/giveup.md}
+  - {name: silent, path: nodes/silent.md}
+  - {name: guarded, path: nodes/guarded.md}
+  - {name: gated, path: nodes/gated.md}
+  - {name: gated_fn, path: nodes/gated_fn.md}
+  - {name: gated_missing, path: nodes/gated_missing.md}
+  - {name: gated_broken, path: nodes/gated_broken.md}
+  - {name: plain, path: nodes/plain.md}
+  - {name: tally, path: nodes/tally.md}
+  - {name: ledger, path: nodes/ledger.md}
+  - {name: locate, path: nodes/locate.md}
+  - {name: consult, path: nodes/consult.md}
+  - {name: fetcher, path: nodes/fetcher.md}
+  - {name: gated_srv, path: nodes/gated_srv.md}
+  - {name: locate_quiet, path: nodes/locate_quiet.md}
+  - {name: asker, path: nodes/asker.md}
+  - {name: gated_rec, path: nodes/gated_rec.md}
+  - {name: gated_norec, path: nodes/gated_norec.md}
+  - {name: improvise, path: nodes/improvise.md}
+  - {name: gated_route, path: nodes/gated_route.md}
+exits:
+  done: route
+  declined: route
+  failed: route
+improvisation:
+  setting: "on"
+  node: improvise
+menu:
+  - {label: Refresh, node: refresh}
+  - {label: Status, node: status}
+  - {label: Survey, node: survey}
+  - {label: Gated work, node: gated}

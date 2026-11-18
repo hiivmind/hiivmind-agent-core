@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": [
+    "name",
+    "core",
+    "entry",
+    "policy",
+    "backend"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "core": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "entry": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy": {
+      "type": "string",
+      "minLength": 1
+    },
+    "backend": {
+      "type": "string",
+      "minLength": 1
+    },
+    "servers": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "additionalProperties": {
+        "type": "object",
+        "oneOf": [
+          {
+            "required": [
+              "command"
+            ],
+            "not": {
+              "required": [
+                "url"
+              ]
+            }
+          },
+          {
+            "required": [
+              "url"
+            ],
+            "not": {
+              "required": [
+                "command"
+              ]
+            }
+          }
+        ],
+        "properties": {
+          "command": {
+            "type": "string"
+          },
+          "args": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "env": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "tools": {
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_-]+$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^[^:]+:[^:]+$"
+      }
+    },
+    "trust": {
+      "type": "object"
+    },
+    "settings": {
+      "type": "object"
+    }
+  }
+}
