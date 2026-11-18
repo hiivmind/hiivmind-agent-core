@@ -26,3 +26,22 @@ async def servers(run_dir):
     source = McpServers(DECLARED, {"AGENT_CORE_INSTANCE": str(INSTANCE), "AGENT_CORE_RUN_DIR": str(run_dir)}, INSTANCE)
     yield source
     await source.close()
+
+
+@pytest.fixture
+def port(tmp_path, monkeypatch):
+    """`port(nodes=Nodes(), check=None, sequences=None, fragments=None, pause=0)`: a `WalkPort` over the sequences fixture."""
+    from walking import make_port
+
+    return lambda **options: make_port(tmp_path, monkeypatch, **options)
+
+
+@pytest.fixture
+def walk(port):
+    """`await walk(name, facts, **options)`: walk a sequence of the sequences fixture; options as for `port`."""
+    from agent_core.helpers.walk import walk_sequence
+
+    async def run(name, facts=None, **options):
+        return await walk_sequence(port(**options), name, dict(facts or {}))
+
+    return run
