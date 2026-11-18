@@ -84,10 +84,20 @@ def test_providers_do_not_import_the_core():  # LAYER-3
                 assert module != "agent_core.core" and not module.startswith("agent_core.core."), file
 
 
+def sdk_imports(source: str) -> set[str]:
+    return {m.split(".")[0] for m, _ in imports_of(source, ["agent_core"])} & SDKS
+
+
 def test_only_a_backend_imports_an_sdk():
-    for layer in (PROVIDERS | HELPERS | {"core", "contracts"}) - {"backends"}:
-        for file in files(layer):
+    for file in sorted(PKG.rglob("*.py")):
+        if (PKG / "backends") not in file.parents:
             assert not top(file) & SDKS, file
+
+
+def test_the_sdk_gate_rejects_an_sdk_import():
+    assert sdk_imports("import openai") == {"openai"}
+    assert sdk_imports("from langchain_openai import ChatOpenAI") == {"langchain_openai"}
+    assert sdk_imports("import json") == set()
 
 
 def test_only_the_dbos_journal_imports_dbos():  # RESUME-6, LAYER-2
@@ -102,12 +112,27 @@ def test_only_the_mcp_helper_imports_mcp():
             assert "mcp" not in top(file), file
 
 
+def cli_violations(source: str) -> list[str]:
+    """Imports of ours that are neither `agent_core` nor its public `open`."""
+    out = []
+    for module, _ in imports_of(source, ["agent_core"]):
+        if (module == "agent_core" or module.startswith("agent_core.")) and module not in ("agent_core", "agent_core.open"):
+            out.append(module)
+    return out
+
+
 def test_the_cli_imports_only_agent_core():  # FAC-4
     cli = PKG / "cli.py"
-    if not cli.exists():
-        return
-    for module in ours(cli):
-        assert module == "agent_core", cli
+    if cli.exists():
+        assert not cli_violations(cli.read_text()), cli
+
+
+def test_the_cli_gate_allows_the_public_open_and_rejects_internals():
+    assert cli_violations("from agent_core import open") == []
+    assert cli_violations("import agent_core") == []
+    assert cli_violations("from agent_core import core") == ["agent_core.core"]
+    assert cli_violations("from agent_core.core.facade import x") != []
+    assert cli_violations("import agent_core.contracts") != []
 
 
 def test_the_layering_walk_sees_files():
@@ -115,18 +140,34 @@ def test_the_layering_walk_sees_files():
     assert {p.name for p in PKG.iterdir() if p.is_dir()} >= {"contracts", "core", "helpers", "backends", "journals", "person", "resources", "context", "assets"}
 
 
+def skill_violations(text: str, is_matrix: bool) -> list[str]:
+    """Uses of the word `skill` other than F22's title "skills" (one, on a line naming F22) in matrix.py."""
+    bad = ["SKILL.md"] if "SKILL.md" in text else []
+    allowed = 1 if is_matrix else 0
+    for line in text.splitlines():
+        if allowed and "F22" in line and '"skills"' in line:
+            line = line.replace('"skills"', "", 1)
+            allowed = 0
+        if re.search(r"skill", line, re.I):
+            bad.append(line)
+    return bad
+
+
 def test_nothing_calls_a_node_a_skill():  # LNG-1
-    allowed = PKG / "contracts" / "matrix.py"
+    matrix = PKG / "contracts" / "matrix.py"
     for file in sorted(PKG.rglob("*")):
-        if not file.is_file() or file.suffix == ".pyc":
-            continue
-        text = file.read_text()
-        assert "SKILL.md" not in text, file
-        if file != allowed:
-            assert not re.search(r"skill", text, re.I), file
-        else:
-            leftover = re.sub(r"\"skills\"", "", text, flags=re.I)
-            assert not re.search(r"skill", leftover, re.I), file
+        if file.is_file() and file.suffix != ".pyc":
+            assert not skill_violations(file.read_text(), file == matrix), file
+
+
+def test_the_language_gate_allows_only_f22s_title():
+    assert skill_violations('F22 = Feature("F22", "skills")', True) == []
+    assert skill_violations('node_directory = "skills"', True) != []
+    assert skill_violations('F22 = "skills"\nx = "skills"', True) != []
+    assert skill_violations('F22 = "skills"  # "skills"', True) != []
+    assert skill_violations('F22 = "skills"', False) != []
+    assert skill_violations("see SKILL.md", False) != []
+    assert skill_violations("a node's path", False) == []
 
 
 def test_the_core_depends_on_no_agent_sdk_and_no_blueprint():  # CORE-5
