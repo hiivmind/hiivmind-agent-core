@@ -1,5 +1,6 @@
 """`Macro`: the walk driven over backends, a journal, and units named by thread and intent (architecture §4.4a)."""
 
+import asyncio
 import dataclasses
 import subprocess
 import sys
@@ -8,17 +9,17 @@ from pathlib import Path
 import pytest
 from macro_support import RESULTS, Toy, make_unit, no_check, no_tool, topology
 
-from agent_core.contracts.registry import provider
+from agent_core.core.registry import provider
 from agent_core.contracts.unit import UnitResult
 from agent_core.core.macro import Macro
 
 HARNESS = Path(__file__).resolve().parent / "macro_harness.py"
 
 
-def macro_of(toy, journal, topo=None, pause=0):
+def macro_of(toy, journal, topo=None):
     topo = topo or topology()
     return Macro(topo, backends=lambda name: toy, default_backend="toy", make_unit=make_unit(topo),
-                 journal=journal, call_tool=no_tool, check=no_check, pause=pause)
+                 journal=journal, call_tool=no_tool, check=no_check)
 
 
 @pytest.fixture
@@ -64,7 +65,13 @@ class Refusing(Toy):
         return RESULTS[unit.name]
 
 
-async def test_the_walks_fresh_second_run_keeps_its_intent_and_attempt(tmp_path, none_journal):
+async def test_the_walks_fresh_second_run_keeps_its_intent_and_attempt(tmp_path, none_journal, monkeypatch):
+    real_sleep = asyncio.sleep
+
+    async def no_wait(seconds):
+        await real_sleep(0)
+
+    monkeypatch.setattr("agent_core.helpers.walk.asyncio.sleep", no_wait)   # the 60 s pause is the walk's; do not wait it
     toy = Refusing(tmp_path / "units.log")
     macro = macro_of(toy, none_journal, dataclasses.replace(topology()))
     await macro.start("r1", "fan", {})

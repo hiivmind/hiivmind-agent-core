@@ -7,7 +7,7 @@ from pathlib import Path
 
 from support import SEQUENCES, FolderSource
 
-from agent_core.contracts.registry import provider
+from agent_core.core.registry import provider
 from agent_core.contracts.topology import END, FanOut, SequenceDef, Step
 from agent_core.contracts.unit import Unit, UnitResult
 from agent_core.contracts.walk import StepRef, WalkPort

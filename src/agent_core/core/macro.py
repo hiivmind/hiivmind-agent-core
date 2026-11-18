@@ -8,10 +8,10 @@ from collections.abc import Awaitable, Callable, Mapping, Sequence
 
 from agent_core.contracts.backend import Backend
 from agent_core.contracts.journal import RunJournal, Steps
-from agent_core.contracts.registry import provider
 from agent_core.contracts.topology import Check, Topology
 from agent_core.contracts.unit import Intent, Unit, UnitResult
-from agent_core.contracts.walk import RETRY_PAUSE, StepRef, WalkPort, WalkResult
+from agent_core.contracts.walk import StepRef, WalkPort, WalkResult
+from agent_core.core.registry import provider
 
 
 class Macro:
@@ -28,10 +28,9 @@ class Macro:
         journal: RunJournal,
         call_tool: Callable[[str, dict], Awaitable[object]],
         check: Callable[[Sequence[Check], dict, str], Awaitable[tuple[dict | None, dict]]],
-        pause: float = RETRY_PAUSE,
     ):
         self._topology, self._backends, self._default = topology, backends, default_backend
-        self._make_unit, self._journal, self._call_tool, self._check, self._pause = make_unit, journal, call_tool, check, pause
+        self._make_unit, self._journal, self._call_tool, self._check = make_unit, journal, call_tool, check
 
     def _walk(self, run_id: str, resuming: bool):
         """The walk the journal runs. On a resume every step runs with intent `continue` unless the walk says `fresh`: a
@@ -47,7 +46,7 @@ class Macro:
             return await (backend.run_fragment(unit) if fragment else backend.run_node(unit))
 
         async def walk(steps: Steps, name: str, facts: dict) -> WalkResult:
-            port = WalkPort(self._topology, run_step, self._call_tool, self._check, steps, self._pause)
+            port = WalkPort(self._topology, run_step, self._call_tool, self._check, steps)
             return await walker.walk_sequence(port, name, facts)
 
         return walk

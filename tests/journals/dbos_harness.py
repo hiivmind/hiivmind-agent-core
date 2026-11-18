@@ -12,7 +12,7 @@ import os
 
 from dbos import DBOS
 
-from agent_core.contracts.registry import provider
+from agent_core.core.registry import provider
 
 MAIN: dict = {}
 

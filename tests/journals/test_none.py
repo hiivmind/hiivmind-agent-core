@@ -1,4 +1,4 @@
-from agent_core.contracts.registry import provider
+from agent_core.core.registry import provider
 
 
 async def test_none_runs_each_step_once():

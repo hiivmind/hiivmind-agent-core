@@ -6,7 +6,7 @@ import asyncio
 
 from macro_support import Toy, make_unit, no_check, no_tool, topology
 
-from agent_core.contracts.registry import provider
+from agent_core.core.registry import provider
 from agent_core.core.macro import Macro
 
 
