@@ -3,6 +3,7 @@
 Standard library only: a provider imports this module, never the core.
 """
 
+import importlib
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -26,3 +27,22 @@ def register(kind: str, name: str) -> Callable[[T], T]:
         return obj
 
     return decorate
+
+
+# Modules that register a provider, by (kind, name), as strings: a caller that may not import a provider asks `provider`.
+MODULES: dict[tuple[str, str], str] = {
+    ("walk", "topology"): "agent_core.helpers.walk",
+    ("journal", "none"): "agent_core.journals.none",
+    ("journal", "dbos"): "agent_core.journals.dbos",
+}
+
+
+def provider(kind: str, name: str) -> object:
+    """The provider registered as `name` of `kind`; its module is imported on first use."""
+    if name not in REGISTERED.get(kind, {}) and (kind, name) in MODULES:
+        importlib.import_module(MODULES[kind, name])
+    try:
+        return REGISTERED[kind][name]
+    except KeyError:
+        known = ", ".join(sorted(REGISTERED.get(kind, {})))
+        raise LookupError(f"no {kind} `{name}`; {kind}s are: {known}") from None
