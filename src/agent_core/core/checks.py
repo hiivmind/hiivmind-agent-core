@@ -100,5 +100,8 @@ async def unmet_check(
             except (ToolError, ToolServerError) as e:
                 raise CheckError(f"{cannot}: {e}") from None
         if not met:
-            return {**dataclasses.asdict(check), "message": fill(check.message)}, {}
+            unmet = dataclasses.asdict(check)
+            if check.outcome is None:  # the key's presence is what routes an unmet check (v0): absent, not None
+                del unmet["outcome"]
+            return {**unmet, "message": fill(check.message)}, {}
     return None, dict(written(before, state))

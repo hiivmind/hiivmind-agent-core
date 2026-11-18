@@ -227,6 +227,13 @@ async def test_unmet_check_returns_the_check_and_no_writes():                   
     assert checks[1].message == "the index is v1"  # the declared check is not changed
 
 
+async def test_an_unmet_check_with_no_outcome_has_no_outcome_key():                         # as v0: absent, not None
+    unmet, _ = await unmet_check(
+        [Check("a", {}, "m")], {}, owner="refresh", call=routed(a=Stub(False)), functions=frozenset({"a"}), fill=str
+    )
+    assert unmet == {"tool": "a", "args": {}, "message": "m"} and "outcome" not in unmet
+
+
 async def test_met_checks_return_every_key_they_changed():                                  # SEQ-9, NODE-11
     def stamps(state):
         state["stamp"] = "s"
