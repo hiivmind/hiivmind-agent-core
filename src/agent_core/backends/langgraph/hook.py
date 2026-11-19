@@ -109,7 +109,7 @@ def _conversation(messages) -> tuple[Message, ...]:
         if isinstance(m, HumanMessage):
             out.append(Message("user", str(m.content)))
         elif isinstance(m, AIMessage):
-            if not m.tool_calls:
+            if not m.tool_calls or text_of(m):   # the text is kept once, before its calls
                 out.append(Message("agent", text_of(m)))
             for c in m.tool_calls:
                 out.append(Message("call", call_id=c["id"], name=c["name"], args=c["args"], result=results.get(c["id"], "")))

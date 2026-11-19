@@ -99,3 +99,14 @@ async def test_no_model_call_after_exit(tmp_path):
     policy, events, state = await play(tmp_path, [[["exit", {}]], "never asked for"])
     assert len(ASKED) == 1   # the script's next step was never asked for
     assert state["node"]["ending"]["outcome"] == "done"
+
+
+async def test_the_text_of_a_response_with_calls_is_in_the_next_request_once(tmp_path):
+    from agent_core.contracts.events import ModelRequested
+
+    steps = [{"text": "thinking aloud", "calls": [["work", {}]]}, [["exit", {}]]]
+    policy, events, state = await play(tmp_path, steps)
+    requests = [e for e in events.seen if isinstance(e, ModelRequested)]
+    conversation = next(p for p in requests[1].parts if p.kind == "conversation").messages
+    assert [(m.kind, m.text) for m in conversation if m.kind == "agent"] == [("agent", "thinking aloud")]
+    assert [m.kind for m in conversation] == ["user", "agent", "call"]
