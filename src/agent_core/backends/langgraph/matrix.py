@@ -9,8 +9,6 @@ from agent_core.contracts.matrix import Entry, Feature, Matrix
 
 _TASK = {
     Feature.F1: 2, Feature.F2: 2, Feature.F18: 2, Feature.F21: 2,
-    Feature.F24: 7,
-    Feature.F15: 8,
     Feature.F7: 9, Feature.F16: 9,
 }
 _FIXED = {
@@ -18,7 +16,7 @@ _FIXED = {
     Feature.F17: "sessions, step 7",
     Feature.F22: "reserved",
     Feature.F23: "deferred",
-    Feature.F10: "deferred: no consumer in this delivery",
+    Feature.F10: "deferred: no setting turns it on yet; the SDK summarizer's own retries would be a second retry owner (MOD-6)",
     Feature.F14: "deferred: `models.usage` has no consumer in this delivery; the record's token counts come from the provider module's `usage` (SCOPE-7)",
     Feature.F19: "deferred: no consumer in this delivery",
 }
@@ -39,6 +37,7 @@ _NATIVE = {
     Feature.F13: "the provider module's cache middleware",
     Feature.F20: "`init_chat_model` through the provider module",
     Feature.F15: "LangChain callbacks and hooks, mapped to events; LangSmith by its own environment variables",
+    Feature.F24: "`recursion_limit`",
     Feature.F21: "the core builds the brief; the backend passes it as `system_prompt`",
 }
 
