@@ -56,7 +56,8 @@ async def test_a_node_asks_only_for_an_input_it_was_not_given(harness):   # NODE
     outcome = await h.nodes.run("choose")
     assert [question for _, question in person.asked] == ["Which colour?"]
     assert (outcome.exit, outcome.outputs) == ("done", {"colour": "green"})
-    assert "state_set" in [name for name, _, _ in returned(h)]   # the answer was recorded against the input
+    [recorded] = [e for e in h.events.record() if isinstance(e, ToolReturned) and e.call.name == "state_set"]
+    assert recorded.call.args == {"key": "colour", "value": "green"} and not recorded.error   # recorded against the input
 
 
 async def test_a_precondition_written_in_the_procedure_that_is_unmet_fails_the_node(harness):   # NODE-14

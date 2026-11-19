@@ -80,10 +80,10 @@ async def test_cache_counts_are_numbers_or_none(harness, wire):   # SCOPE-7
     # A first request is sometimes served as a cache read (the same instructions were sent by an earlier run).
     assert (first.cache_read or 0) + (first.cache_written or 0) > 0
     [note] = outcome.notes
-    assert (note.usage.sent, note.usage.cache_read, note.usage.cache_written) == tuple(
-        sum(getattr(a.response.usage, f) or 0 for a in answers) for f in ("sent", "cache_read", "cache_written")
-    )
-
+    fields = ("sent", "cache_read", "cache_written")
+    counts = {f: [getattr(a.response.usage, f) for a in answers] for f in fields}
+    expected = tuple(None if None in counts[f] else sum(counts[f]) for f in fields)   # SCOPE-7: unreported once any count is
+    assert (note.usage.sent, note.usage.cache_read, note.usage.cache_written) == expected
 
 async def test_a_call_held_for_twenty_seconds_is_not_cut_off(harness, wire):   # VERB-5's long call
     h = harness()
