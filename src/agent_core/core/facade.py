@@ -451,14 +451,15 @@ class Harness:
                 check=run.check,
             )
             result = error = None
-            try:
-                result = await go(macro)
-            except Exception as e:  # the run raised, or the journal refused it (an unknown id)
-                error = f"{type(e).__name__}: {e}"
-            try:
-                sequence = (result or {}).get("sequence") or macro.sequence or await journal.sequence(run_id)
-            except Exception:   # a journal that cannot say leaves the record without the name
-                sequence = None
+            try:   # the journal is closed whatever the run raises, cancellation and exits included
+                try:
+                    result = await go(macro)
+                except Exception as e:  # the run raised, or the journal refused it (an unknown id)
+                    error = f"{type(e).__name__}: {e}"
+                try:
+                    sequence = (result or {}).get("sequence") or macro.sequence or await journal.sequence(run_id)
+                except Exception:   # a journal that cannot say leaves the record without the name
+                    sequence = None
             finally:
                 await journal.close()
         finally:

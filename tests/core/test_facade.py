@@ -722,3 +722,20 @@ async def test_a_resume_of_a_run_that_raised_still_names_its_sequence(toy, open_
     assert (first.end, first.record.sequence) == ("failed", "chain")
     again = await harness.sequences.resume("mine")   # DBOS does not re-enter a workflow that ended in error
     assert again.record.sequence == "chain"
+
+
+async def test_a_cancelled_sequence_run_still_closes_its_journal(toy, open_harness, asking):
+    from agent_core.journals.none import NoJournal
+
+    closed = []
+
+    class Journal(NoJournal):
+        async def close(self):
+            closed.append(True)
+
+    toy(raises={"plain": asyncio.CancelledError()})
+    harness = open_harness(asking.root, **spike())
+    harness.extensions.register("journal", "dbos", lambda file, name, run_id: Journal())
+    with pytest.raises(asyncio.CancelledError):
+        await harness.sequences.run("plain_run", {})
+    assert closed == [True]
