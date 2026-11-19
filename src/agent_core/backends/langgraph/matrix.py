@@ -9,7 +9,6 @@ from agent_core.contracts.matrix import Entry, Feature, Matrix
 
 _TASK = {
     Feature.F1: 2, Feature.F2: 2, Feature.F18: 2, Feature.F21: 2,
-    Feature.F4: 3, Feature.F5: 3,
     Feature.F8: 4, Feature.F9: 4, Feature.F11: 4,
     Feature.F12: 5, Feature.F13: 5, Feature.F20: 5,
     Feature.F3: 6,
@@ -31,6 +30,8 @@ _NATIVE = {
     Feature.F1: "`create_agent`",
     Feature.F2: "`ToolNode` runs the tools after `after_model` reviews the response",
     Feature.F18: "the offered tools; `after_model` and `wrap_tool_call`",
+    Feature.F4: "`BaseTool`, body core policy; LangChain injects `ToolRuntime` into the coroutine of a tool with a dict `args_schema`, so the spec's own schema is the one the model sees",
+    Feature.F5: "the `node` graph-state channel; `ToolNode` applies the tools' `Command` updates when the step ends",
     Feature.F15: "LangChain callbacks and hooks, mapped to events; LangSmith by its own environment variables",
     Feature.F21: "the core builds the brief; the backend passes it as `system_prompt`",
 }
