@@ -13,7 +13,9 @@ async def test_each_request_names_its_parts(tmp_path):
     assert [p.kind for p in first.parts] == ["instructions", "tools", "conversation"]
     instructions, tools, conversation = first.parts
     assert instructions.text == FakePolicy.instructions
-    assert [t["name"] for t in json.loads(tools.text)] == ["work", "exit"]
+    assert [(t["name"], t["description"], t["schema"]) for t in json.loads(tools.text)] == [
+        (t.name, t.description, t.schema) for t in FakePolicy.tools
+    ]
     assert [(m.kind, m.text) for m in conversation.messages] == [("user", "go")]
     assert [p.kind for p in second.parts] == ["instructions", "tools", "conversation"]
     assert second.parts[0] == instructions   # the instructions do not change after a call
