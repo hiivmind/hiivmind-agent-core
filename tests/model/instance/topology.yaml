@@ -1,0 +1,13 @@
+nodes:
+  - {name: lookup, path: nodes/lookup.md}
+  - {name: sweep, path: nodes/sweep.md}
+  - {name: steady, path: nodes/steady.md}
+  - {name: slow, path: nodes/slow.md}
+  - {name: ask, path: nodes/ask.md}
+  - {name: choose, path: nodes/choose.md}
+  - {name: silent, path: nodes/silent.md}
+  - {name: guarded, path: nodes/guarded.md}
+  - {name: badshape, path: nodes/badshape.md}
+exits:
+  done: route
+  failed: route
