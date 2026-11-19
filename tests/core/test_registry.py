@@ -12,8 +12,11 @@ from agent_core.core.registry import (
 )
 
 
-def test_the_tables_name_the_scripted_backend_and_the_providers_of_v0():
-    assert BACKENDS == {"scripted": ("agent_core.backends.scripted", "")}
+def test_the_tables_name_the_backends_and_the_providers_of_v0():
+    assert BACKENDS == {
+        "scripted": ("agent_core.backends.scripted", ""),
+        "langgraph": ("agent_core.backends.langgraph", "langchain"),
+    }
     assert PROVIDERS == {
         "walk": {"topology": "agent_core.helpers.walk"},
         "context": {"none": "agent_core.context.none"},
@@ -26,7 +29,7 @@ def test_the_tables_name_the_scripted_backend_and_the_providers_of_v0():
 def test_unknown_backend_lists_the_known_ones():  # INST-1a
     with pytest.raises(UnknownBackend) as e:
         backend("nope")
-    assert str(e.value) == "no backend `nope`; backends are: scripted"
+    assert str(e.value) == "no backend `nope`; backends are: langgraph, scripted"
 
 
 def test_backend_whose_package_is_missing_names_it(monkeypatch):  # INST-1b
@@ -62,7 +65,7 @@ def test_a_registered_backend_is_found_and_listed():
         assert backend("mine") == (Mine, Settings)
         with pytest.raises(UnknownBackend) as e:
             backend("nope")
-        assert str(e.value) == "no backend `nope`; backends are: mine, scripted"
+        assert str(e.value) == "no backend `nope`; backends are: langgraph, mine, scripted"
     finally:
         registered.REGISTERED_BACKENDS.pop("mine")
 
@@ -74,7 +77,7 @@ def test_a_backend_the_caller_holds_is_found_before_the_registry_and_listed():
     assert backend("scripted", local) == (Mine, Mine)
     with pytest.raises(UnknownBackend) as e:
         backend("nope", local)
-    assert str(e.value) == "no backend `nope`; backends are: mine, scripted"
+    assert str(e.value) == "no backend `nope`; backends are: langgraph, mine, scripted"
 
 
 def test_unknown_provider_lists_the_known_ones():

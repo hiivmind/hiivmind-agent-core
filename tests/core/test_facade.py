@@ -285,7 +285,7 @@ async def test_two_harnesses_with_different_settings_give_a_function_their_own(t
 async def test_an_unknown_backend_override_stops_before_any_model_call(toy, open_harness):   # INST-1a
     backend = toy(PLAIN)
     harness = open_harness(FIXTURE, **spike())
-    with pytest.raises(RunCannotStart, match=r"no backend `nope`; backends are: scripted"):
+    with pytest.raises(RunCannotStart, match=r"no backend `nope`; backends are: langgraph, scripted"):
         await harness.nodes.run("plain", {}, backend="nope")
     assert backend.units == [] and backend.served is None
 
@@ -308,7 +308,7 @@ async def test_a_backend_registered_through_extensions_runs_one_unit_and_the_def
     assert (await harness.nodes.run("plain", {}, backend="other")).outputs == {"reason": "other"}
     assert (await harness.nodes.run("plain", {})).outputs == {"done_work": "plain-work"}
     assert ([u.name for u in other.units], [u.name for u in default.units]) == (["plain"], ["plain"])
-    with pytest.raises(RunCannotStart, match=r"backends are: other, scripted, toy"):
+    with pytest.raises(RunCannotStart, match=r"backends are: langgraph, other, scripted, toy"):
         await harness.nodes.run("plain", {}, backend="nope")
 
 
@@ -319,7 +319,7 @@ async def test_open_stops_with_run_cannot_start_for_what_it_cannot_load(toy):
         agent_core.open(FIXTURE.parent / "nowhere" / "instance.yaml", **runs)
     with pytest.raises(RunCannotStart, match="settings: missing or invalid: CORPUS_REPO"):
         agent_core.open(FIXTURE / "instance.yaml", **runs)
-    with pytest.raises(RunCannotStart, match=r"no backend `nope`; backends are: scripted, toy"):
+    with pytest.raises(RunCannotStart, match=r"no backend `nope`; backends are: langgraph, scripted, toy"):
         agent_core.open(FIXTURE / "instance.yaml", settings=[ALPHA], backend="nope")
     with pytest.raises(RunCannotStart, match="settings: no setting named `BOGUS`"):
         agent_core.open(FIXTURE / "instance.yaml", settings=[ALPHA], params={"BOGUS": "1"}, **runs)

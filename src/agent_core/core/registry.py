@@ -11,6 +11,7 @@ from agent_core.contracts.registry import REGISTERED, REGISTERED_BACKENDS
 
 BACKENDS: dict[str, tuple[str, str]] = {   # name -> (module, the package a missing module is blamed on; "" names the module)
     "scripted": ("agent_core.backends.scripted", ""),
+    "langgraph": ("agent_core.backends.langgraph", "langchain"),
 }
 PROVIDERS: dict[str, dict[str, str]] = {
     "walk": {"topology": "agent_core.helpers.walk"},

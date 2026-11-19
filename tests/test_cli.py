@@ -34,7 +34,7 @@ def one_line(ran, message):
 
 
 @pytest.mark.parametrize("args,instance_with,message", [
-    (["--backend", "nope"], None, "error: no backend `nope`; backends are: scripted"),
+    (["--backend", "nope"], None, "error: no backend `nope`; backends are: langgraph, scripted"),
     ([], "missing: functions:no_such_function",
      'error: instance.yaml: tool "missing": cannot import functions:no_such_function: '
      "ImportError: the module has no function `no_such_function`"),

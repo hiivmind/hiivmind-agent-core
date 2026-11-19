@@ -14,6 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import script_model  # noqa: F401  (registers the `script` model provider)
 from audit import DESELECTED, all_matrices, record
 
 import agent_core
@@ -32,7 +33,13 @@ def deliver_scripted(scripts: dict[str, list], directory: Path) -> dict[str, str
     return {"AGENT_CORE_SCRIPTED_SCRIPTS": str(directory)}
 
 
-DELIVERY = {"scripted": deliver_scripted}   # backend name -> how its scripts reach it: the environment its settings read
+def deliver_langgraph(scripts: dict[str, list], directory: Path) -> dict[str, str]:
+    """The LangGraph backend plays the scripts through the `script` model provider: `MODEL=script:<directory>`."""
+    deliver_scripted(scripts, directory)
+    return {"AGENT_CORE_LANGGRAPH_MODEL": f"script:{directory}"}
+
+
+DELIVERY = {"scripted": deliver_scripted, "langgraph": deliver_langgraph}   # backend name -> how its scripts reach it: the environment its settings read
 
 
 def pytest_generate_tests(metafunc):

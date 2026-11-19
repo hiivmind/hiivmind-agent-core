@@ -8,6 +8,8 @@ import json
 import sys
 from pathlib import Path
 
+import script_model  # noqa: F401  (registers the `script` model provider)
+
 import agent_core
 
 
