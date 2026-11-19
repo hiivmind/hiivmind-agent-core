@@ -65,15 +65,15 @@ FROZEN = (
 )
 
 
-def command_in_a_process(tmp_path, args, *, jobs=None, program="import sys; from agent_core.cli import main; sys.exit(main(sys.argv[1:]))"):
+def command_in_a_process(tmp_path, args, *, jobs=None, cwd=REPO, name="plain_run", program="import sys; from agent_core.cli import main; sys.exit(main(sys.argv[1:]))"):
     """`main(args)` in a process of its own, on a copy of the fixture instance with the `plain` script; returns the
     finished process and the instance's `instance.yaml`."""
     jobs = jobs or Jobs(tmp_path, "instance")
     yaml = jobs.instance(with_lines=ASK_ONE)
     environment = {**os.environ, "AGENT_CORE_SCRIPTED_SCRIPTS": str(jobs.scripts("x", {"plain": PLAIN}))}
     done = subprocess.run(
-        [sys.executable, "-c", program, "job", str(yaml), "plain_run", "--settings", str(ALPHA), *args],
-        capture_output=True, text=True, cwd=REPO, env=environment, stdin=subprocess.DEVNULL, timeout=300,
+        [sys.executable, "-c", program, "job", str(yaml), name, "--settings", str(ALPHA), *args],
+        capture_output=True, text=True, cwd=cwd, env=environment, stdin=subprocess.DEVNULL, timeout=300,
     )
     return done, yaml
 
@@ -94,6 +94,35 @@ def test_main_returns_the_exit_code_and_takes_the_arguments_of_the_command(tmp_p
     assert done.returncode == 0 and done.stdout == "run run\n"
     assert record["params"] == {"CORPUS_NAME": "zeta", "BRANCH_PREFIX": "x=y"} and record["backend"] == "scripted"
     assert record["attended"] is False and record["run_id"] == "run" and record["end_state"] == "done"
+
+
+@pytest.mark.parametrize("directory,run_id,record", [(".", "here", "here"), ("sub/run", "run", "here/sub/run")])
+def test_a_relative_run_directory_is_resolved_before_its_id_and_parent_are_taken(tmp_path, directory, run_id, record):
+    here = tmp_path / "here"
+    here.mkdir()
+    done, _ = command_in_a_process(tmp_path, ["--run-dir", directory], cwd=here)
+    assert done.returncode == 0 and done.stdout == f"run {run_id}\n", done.stdout + done.stderr
+    assert read_record(tmp_path / record)["run_id"] == run_id
+    assert not list(here.glob("plain_run-*"))                                                   # no second, generated id
+
+
+def test_a_resumed_run_keeps_to_the_run_directory_asked_for(tmp_path):
+    jobs = Jobs(tmp_path, "instance")
+    done, _ = command_in_a_process(tmp_path, ["--run-dir", str(tmp_path / "first")], jobs=jobs)
+    assert done.returncode == 0
+    done, _ = command_in_a_process(tmp_path, ["--resume", "first", "--run-dir", str(tmp_path / "output")], jobs=jobs)
+    assert done.returncode == 0 and done.stdout.startswith("run first\n"), done.stdout + done.stderr
+    assert read_record(tmp_path / "output")["run_id"] == "first" and not (tmp_path / "second").exists()
+
+
+@pytest.mark.parametrize("again", [["--resume", "first"], ["--rerun-from", "first:1"], []])
+def test_a_name_that_is_not_a_sequence_exits_2_in_every_mode(tmp_path, again):
+    jobs = Jobs(tmp_path, "instance")
+    done, _ = command_in_a_process(tmp_path, ["--run-dir", str(tmp_path / "first")], jobs=jobs)
+    assert done.returncode == 0
+    done, _ = command_in_a_process(tmp_path, [*again, "--run-dir", str(tmp_path / "next")], jobs=jobs, name="nope")
+    assert done.returncode == 2 and done.stdout.splitlines()[-1] == "error: no sequence `nope`; the sequences are: ask_one, plain_run"
+    assert not (tmp_path / "next" / "record.json").exists()
 
 
 def test_a_param_without_a_value_is_a_usage_error():

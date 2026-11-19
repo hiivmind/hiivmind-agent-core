@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 from .events import Event
@@ -44,8 +45,10 @@ class Nodes(Protocol):
 @runtime_checkable
 class Sequences(Protocol):
     async def run(self, name: str, inputs: Mapping | None = None, *, run_id: str | None = None) -> SequenceResult: ...
-    async def resume(self, run_id: str) -> SequenceResult: ...
-    async def rerun(self, run_id: str, from_step: int, *, new_run_id: str | None = None) -> SequenceResult: ...
+    async def resume(self, run_id: str, *, name: str | None = None, run_dir: Path | None = None) -> SequenceResult: ...
+    async def rerun(
+        self, run_id: str, from_step: int, *, new_run_id: str | None = None, name: str | None = None, run_dir: Path | None = None
+    ) -> SequenceResult: ...
 
 
 @runtime_checkable

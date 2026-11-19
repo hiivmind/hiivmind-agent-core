@@ -48,9 +48,10 @@ def _parser() -> argparse.ArgumentParser:
 
 async def _job(args: argparse.Namespace) -> int:
     attended = sys.stdin is not None and sys.stdin.isatty() and not args.no_ask  # JOB-6
-    runs = args.run_dir.parent if args.run_dir is not None else None
+    run_dir = args.run_dir.resolve() if args.run_dir is not None else None
+    runs = run_dir.parent if run_dir is not None else None
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_id = args.resume or (args.run_dir.name if args.run_dir is not None else f"{args.name}-{stamp}-{uuid4().hex[:6]}")
+    run_id = args.resume or (run_dir.name if run_dir is not None else f"{args.name}-{stamp}-{uuid4().hex[:6]}")
     try:
         async with agent_core.open(
             args.instance, backend=args.backend, settings=args.settings, params=dict(args.param),
@@ -58,17 +59,17 @@ async def _job(args: argparse.Namespace) -> int:
         ) as harness:
             if args.rerun_from:
                 print(f"run {run_id} (from {args.rerun_from[0]}, step {args.rerun_from[1]})", flush=True)
-                result = await harness.sequences.rerun(*args.rerun_from, new_run_id=run_id)
+                result = await harness.sequences.rerun(*args.rerun_from, new_run_id=run_id, name=args.name, run_dir=run_dir)
             else:
                 print(f"run {run_id}", flush=True)
                 if args.resume:
-                    result = await harness.sequences.resume(args.resume)
+                    result = await harness.sequences.resume(args.resume, name=args.name, run_dir=run_dir)
                 else:
                     result = await harness.sequences.run(args.name, dict(args.input), run_id=run_id)
     except agent_core.RunCannotStart as e:
         print(f"error: {e}", flush=True)
         return 2
-    run_dir = args.run_dir or args.instance.resolve().parent / "runs" / result.run_id
+    run_dir = run_dir or args.instance.resolve().parent / "runs" / result.run_id
     run_dir.mkdir(parents=True, exist_ok=True)
     (run_dir / "record.json").write_text(json.dumps(dataclasses.asdict(result.record), indent=2, default=str))
     if result.end == "failed":

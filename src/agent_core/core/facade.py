@@ -266,20 +266,30 @@ class _Sequences:
     def __init__(self, harness: Harness):
         self._h = harness
 
-    async def run(self, name: str, inputs: Mapping | None = None, *, run_id: str | None = None) -> SequenceResult:
+    def _known(self, name: str) -> None:
         sequences = self._h.instance.topology.sequences
         if name not in sequences:
             raise RunCannotStart(f"no sequence `{name}`; the sequences are: {', '.join(sorted(sequences)) or 'none'}")
+
+    async def run(self, name: str, inputs: Mapping | None = None, *, run_id: str | None = None) -> SequenceResult:
+        self._known(name)
         run_id, facts = run_id or _new_run_id(name), dict(inputs or {})
         return await self._h.sequence(run_id, lambda macro: macro.start(run_id, name, facts))
 
-    async def resume(self, run_id: str) -> SequenceResult:
-        return await self._h.sequence(run_id, lambda macro: macro.resume(run_id))
+    async def resume(self, run_id: str, *, name: str | None = None, run_dir: Path | None = None) -> SequenceResult:
+        """`name`, when given, must be a sequence of the topology; `run_dir` is where the run's files go (default `runs/<run_id>`)."""
+        if name is not None:
+            self._known(name)
+        return await self._h.sequence(run_id, lambda macro: macro.resume(run_id), run_dir)
 
-    async def rerun(self, run_id: str, from_step: int, *, new_run_id: str | None = None) -> SequenceResult:
+    async def rerun(
+        self, run_id: str, from_step: int, *, new_run_id: str | None = None, name: str | None = None, run_dir: Path | None = None
+    ) -> SequenceResult:
+        if name is not None:
+            self._known(name)
         match = RUN_ID.fullmatch(run_id)
         new = new_run_id or _new_run_id(match.group(1) if match else run_id)
-        return await self._h.sequence(new, lambda macro: macro.rerun(new, run_id, from_step))
+        return await self._h.sequence(new, lambda macro: macro.rerun(new, run_id, from_step), run_dir)
 
 
 class _Tools:
@@ -422,11 +432,13 @@ class Harness:
             raise
         return _Run(self, declared, functions, settings, resources, person, run_dir, before)
 
-    async def sequence(self, run_id: str, go: Callable[[Macro], Awaitable[WalkResult]]) -> SequenceResult:
+    async def sequence(
+        self, run_id: str, go: Callable[[Macro], Awaitable[WalkResult]], run_dir: Path | None = None
+    ) -> SequenceResult:
         """Run a sequence as one journalled run under `run_id`, and keep its record (§4.6, §4.7). A run that raises ends
         `failed`: the record says why, and what the walk had reached (JOB-17, RESUME-2)."""
         start = _now()
-        run = await self.begin(self.runs / run_id)
+        run = await self.begin(run_dir or self.runs / run_id)
         try:
             journal = self.lookup("journal", "dbos")(self.runs / "journal.sqlite", self.instance.name, run_id)
             macro = Macro(
