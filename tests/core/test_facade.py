@@ -663,3 +663,53 @@ async def test_a_fan_out_that_asks_with_nobody_there_ends_needs_input(toy, open_
     assert [f["reason"] for f in result.facts["colours_failures"]] == ["needs_input", "needs_input"]
     assert [f["reason"] for f in result.record.failures] == ["needs_input", "needs_input"]
     assert result.record.attended is False
+
+
+async def test_a_node_run_on_another_backend_resolves_its_servers_through_that_backend(toy, open_harness):
+    default = toy(PLAIN)
+    other = Toy(PLAIN)
+    harness = open_harness(FIXTURE, **spike())
+    harness.extensions.register("backend", "other", (lambda settings: other, object))
+    await harness.nodes.run("plain", {}, backend="other")
+    assert default.served is None and set(other.served) == {"tools", "web"}   # the selected backend's `servers` was called
+    await harness.nodes.run("plain", {})
+    assert set(default.served) == {"tools", "web"}
+
+
+async def test_a_relative_runs_directory_is_resolved_at_the_boundary_so_a_server_writes_into_it(toy, open_harness, tmp_path, monkeypatch):
+    toy({"status": [[("tools__shell", {"command": "echo hi"})], [("exit", {"outcome": "done", "outputs": {"status_report": "ok"}})]]})
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)   # not the instance's directory, where the servers start
+    harness = open_harness(FIXTURE, **spike(runs=Path("output")))
+    assert harness.runs == elsewhere / "output"
+    await harness.nodes.run("status", {})
+    assert (elsewhere / "output" / "tool_calls.jsonl").is_file()
+    assert not (FIXTURE / "output").exists()
+
+
+async def test_a_relative_run_directory_of_a_rerun_is_resolved_before_the_environment_is_exported(toy, open_harness, tmp_path, monkeypatch):
+    backend = toy({
+        "migrate": [[("exit", {"outcome": "done", "outputs": {"entry_count": 3}})]],
+        "index": [[("exit", {"outcome": "done", "outputs": {"entries": ["e1"]}})]],
+        "verify": [[("exit", {"outcome": "done", "outputs": {"drift": 0}})]],
+    })
+    harness = open_harness(SEQUENCES)
+    first = await harness.sequences.run("chain", {"scan_results": [["e1"]]})
+    monkeypatch.chdir(tmp_path)
+    await harness.sequences.rerun(first.run_id, 2, run_dir=Path("again"))
+    assert backend.environment[-1]["AGENT_CORE_RUN_DIR"] == str(tmp_path / "again") and (tmp_path / "again").is_dir()
+
+
+async def test_the_record_names_the_sequence_run_fresh_resumed_and_rerun(toy, open_harness):   # JOB-9a
+    toy({
+        "migrate": [[("exit", {"outcome": "done", "outputs": {"entry_count": 3}})]],
+        "index": [[("exit", {"outcome": "done", "outputs": {"entries": ["e1"]}})]],
+        "verify": [[("exit", {"outcome": "done", "outputs": {"drift": 0}})]],
+    })
+    harness = open_harness(SEQUENCES)
+    # a run id that does not carry the sequence's name: the name comes from the journal's stored workflow
+    first = await harness.sequences.run("chain", {"scan_results": [["e1"]]}, run_id="mine")
+    resumed = await harness.sequences.resume("mine")
+    again = await harness.sequences.rerun("mine", 2, new_run_id="other")
+    assert [r.record.sequence for r in (first, resumed, again)] == ["chain", "chain", "chain"]

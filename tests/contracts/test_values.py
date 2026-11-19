@@ -18,7 +18,7 @@ def test_feature_not_supported_names_the_feature_backend_and_reason():
 
 
 def test_a_walk_result_is_a_typed_dict_with_the_four_keys():
-    assert set(WalkResult.__annotations__) == {"end", "trail", "facts", "summary"}
+    assert set(WalkResult.__annotations__) == {"end", "trail", "facts", "summary", "sequence"}
 
 
 def test_a_contracts_outcomes_add_the_built_ins_once():

@@ -1,7 +1,7 @@
 """Load a Python file of an instance by path, once.
 
 Standard library only: a provider imports this module, never the core. The same file always gives the same module
-object. Its module name is private; the instance's directory is on `sys.path` while a run is open (see `open_run`), so the
+object. Its module name is private; the instance's directory is on `sys.path` while the harness is open (see `agent_core.open`), so the
 files of an instance import each other by their own names.
 """
 

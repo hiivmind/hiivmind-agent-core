@@ -106,13 +106,17 @@ def test_a_relative_run_directory_is_resolved_before_its_id_and_parent_are_taken
     assert not list(here.glob("plain_run-*"))                                                   # no second, generated id
 
 
-def test_a_resumed_run_keeps_to_the_run_directory_asked_for(tmp_path):
-    jobs = Jobs(tmp_path, "instance")
-    done, _ = command_in_a_process(tmp_path, ["--run-dir", str(tmp_path / "first")], jobs=jobs)
-    assert done.returncode == 0
-    done, _ = command_in_a_process(tmp_path, ["--resume", "first", "--run-dir", str(tmp_path / "output")], jobs=jobs)
-    assert done.returncode == 0 and done.stdout.startswith("run first\n"), done.stdout + done.stderr
-    assert read_record(tmp_path / "output")["run_id"] == "first" and not (tmp_path / "second").exists()
+def test_a_resumed_step_writes_its_files_into_the_run_directory_asked_for(tmp_path):
+    jobs = Jobs(tmp_path, "sequences", FIXTURES / "sequences" / "scripts" / "ok")
+    crashed = jobs("refresh", env={"SEQ_CRASH": "verify"})
+    assert crashed.code == 3
+    output = tmp_path / "output"
+    done = jobs("refresh", args=["--resume", "run", "--run-dir", str(output)])
+    assert done.code == 0 and done.out.startswith("run run\n"), done.out
+    assert read_record(output)["run_id"] == "run"
+    resumed = [json.loads(line) for line in (output / "calls.jsonl").read_text().splitlines()]   # a tool of the resumed step wrote it
+    assert [call["node"] for call in resumed] == ["verify", "publish"]   # the steps the resume ran, and none that finished
+    assert [json.loads(line)["node"] for line in (crashed.run_dir / "calls.jsonl").read_text().splitlines()][-1] == "verify"   # the crash's own
 
 
 @pytest.mark.parametrize("again", [["--resume", "first"], ["--rerun-from", "first:1"], []])

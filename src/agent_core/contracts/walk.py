@@ -38,3 +38,4 @@ class WalkResult(TypedDict):   # a TypedDict, so DBOS records it as the dict it 
     trail: list[dict]
     facts: dict
     summary: object
+    sequence: str   # the sequence walked, kept with the result, so that a journal that hands a finished run's result back names it

@@ -48,7 +48,7 @@ async with agent_core.open("instance.yaml", backend=None, settings=(), params=No
 
 ## Instances
 
-An instance is a directory with `instance.yaml` (name, entry, policy, backend, settings, servers, function tools, a list of nodes), `topology.yaml`, and the policy document.
+An instance is a directory with `instance.yaml` (name, entry, policy, backend, settings, servers, function tools), `topology.yaml` (the nodes, fragments and sequences), and the policy document.
 
 - **Nodes are files.** A node is one Markdown file with frontmatter (name, description, inputs, outputs, exits, allowed tools, preconditions) and numbered steps, named by its `path` in `topology.yaml`.
 - **Includes.** Prose shared between nodes is an include: `{{include includes/safety.md}}` in a node's text, a file under the instance's `includes/`.

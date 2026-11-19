@@ -41,6 +41,7 @@ class _Walk:
         self.port = port
         self.taken = 0                      # step numbers taken so far; DBOS numbers its steps the same way
         self.trail: list[dict] = []
+        self.results: dict[int, UnitResult] = {}   # each step's result by step number, for a fragment's inner trail
 
     def _number(self, count: int = 1) -> int:
         first = self.taken + 1
@@ -111,6 +112,7 @@ class _Walk:
                 result = await self.port.steps.step(node, lambda: self.port.run_step(node, inputs, StepRef(number), "start"))
                 outcome, summary = result.exit, _summary(result)
                 entry["outcome"] = outcome
+                self.results[number] = result
                 if node in self.port.topology.fragments:
                     entry["steps"] = list(result.steps)
                 outputs = self._declared(node, result.outputs)
@@ -153,6 +155,7 @@ class _Walk:
             if result is None:
                 continue
             self.trail.append({"step": first + n - 1, "name": f"{node}[{n}]", "outcome": result.exit})
+            self.results[first + n - 1] = result
             if result.exit == "done":
                 done.append(self._declared(node, result.outputs))
             elif result.exit != "stopped":
@@ -194,7 +197,20 @@ async def walk_sequence(port: WalkPort, name: str, facts: dict, progress: dict |
     if progress is not None:
         progress["trail"], progress["facts"] = walk.trail, facts
     end, _, summary, _ = await walk.sequence(name, facts)
-    return {"end": end, "trail": walk.trail, "facts": facts, "summary": summary}
+    return {"end": end, "trail": walk.trail, "facts": facts, "summary": summary, "sequence": name}
+
+
+def _inner(entry: dict, result: UnitResult | None) -> dict:
+    """An inner step of a fragment as its trail keeps it: the name and outcome, and the reason and the detail of its
+    result when it has them, so that a failure inside the fragment is not lost at its boundary (JOB-9a, JOB-13)."""
+    kept = {"name": entry["name"], "outcome": entry["outcome"]}
+    if result is not None:
+        reason = result.reason or (result.outputs.get("reason") if result.exit == "failed" else None)   # `_failed` keeps it there
+        if reason:
+            kept["reason"] = reason
+        if result.detail:
+            kept["detail"] = dict(result.detail)
+    return kept
 
 
 async def walk_fragment(port: WalkPort, fragment: FragmentDef, inputs: Mapping) -> UnitResult:
@@ -203,7 +219,7 @@ async def walk_fragment(port: WalkPort, fragment: FragmentDef, inputs: Mapping) 
     walk = _Walk(port)
     facts = {name: inputs[name] for name in fragment.inputs if name in inputs}
     end, outcome, summary, clean = await walk.follow(fragment.transitions, fragment.start, facts, None, None)
-    steps = tuple({"name": e["name"], "outcome": e["outcome"]} for e in walk.trail)
+    steps = tuple(_inner(e, walk.results.get(e["step"])) for e in walk.trail)
     outputs = {name: facts[name] for name in fragment.outputs if name in facts}
     if end == "stopped":  # SEQ-7
         return UnitResult("stopped", outputs, steps=steps)

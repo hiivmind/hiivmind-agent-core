@@ -83,11 +83,12 @@ def build(
     events: Iterable[Event],
     labels: Collection[str],
     run_id: str,
+    sequence: str | None,
     result: WalkResult | None = None,
     error: str | None = None,
     progress: Mapping | None = None,
 ) -> RunRecord:
-    """The record of a sequence run that ended with `result`, or raised `error` (`Type: message`). `labels` are the node
+    """The record of a sequence run that ended with `result`, or raised `error` (`Type: message`). `sequence` is the name of the sequence run (None if it is not known). `labels` are the node
     runs of this process: a resumed run's finished steps are in `steps`, not in `notes`. A run that raised keeps what the
     walk had reached, from `progress`: the steps it took (the one that was running with no outcome) and its facts."""
     if error is not None:
@@ -110,6 +111,7 @@ def build(
         failures=failures,
         notes=list(notes(events, labels)),
         run_id=run_id,
+        sequence=sequence,
         end_state=end_state,
         steps=steps,
         facts=facts,

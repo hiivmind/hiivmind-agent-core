@@ -100,6 +100,10 @@ class _Recorded:
         except ToolServerError as e:
             self._run.failures.append({"node": unit.name, "error": f"{type(e).__name__}: {e}"})
             raise
+        for step in result.steps:   # a failed inner step is a failure of the run, whether or not the fragment recovered
+            if step["outcome"] == "failed":
+                inner = UnitResult("failed", {}, step.get("reason"), step.get("detail", {}))
+                self._run.failures.append(failure(f"{unit.name}/{step['name']}", inner))
         if result.exit == "failed":
             self._run.failures.append(failure(unit.name, result))
         return result
@@ -254,7 +258,7 @@ class _Nodes:
         if (refusal := unknown_inputs(found.contract, inputs)) is not None:  # NODE-8a: before anything else
             raise ValueError(refusal)
         chosen = h.backend(backend)  # REG-2, INST-1a, INST-1b: before any tool is called
-        run = await h.begin(None)
+        run = await h.begin(None, chosen)
         try:
             result = await _Recorded(chosen, run).run_node(run.unit(node, inputs, "start", ""))
         finally:
@@ -355,7 +359,7 @@ class Harness:
         self.params = masked(self._params, load_settings(self.instance, [Path(f) for f in settings], params))  # now: a bad one stops `open`
         self.backend_name = backend or self.instance.backend
         self.attended = person is not None and person != "nobody"
-        self.runs = Path(runs) if runs is not None else self.root / "runs"
+        self.runs = (Path(runs) if runs is not None else self.root / "runs").resolve()
         self.hub = EventHub()
         self.person_lock = asyncio.Lock()
         self.started = 0
@@ -403,11 +407,10 @@ class Harness:
         if entry.state in ("divergent", "not built"):
             raise FeatureNotSupported(feature, self.backend_name, entry)
 
-    async def begin(self, run_dir: Path | None) -> _Run:
+    async def begin(self, run_dir: Path | None, backend: Backend | None = None) -> _Run:
         """Start a run (`run_dir` is None outside a sequence): its settings, the environment the instance's functions and
-        servers read, one connection to each declared server for the run's length (TOOL-15, made by the default
-        backend's `servers`, which reads the environment as it is now), and the declared-tool set (TOOL-16). The caller
-        calls `end` on the run."""
+        servers (TOOL-15, made by `backend`, the default one when None, whose `servers` read the environment as it is
+        now), and the declared-tool set (TOOL-16). The caller calls `end` on the run."""
         try:
             settings = load_settings(self.instance, [Path(f) for f in self.settings_files], self._params)
         except SettingsError as e:
@@ -422,7 +425,7 @@ class Harness:
         try:
             person = self._person if not isinstance(self._person, str) else self.lookup("person", self._person)()
             resources = self.lookup("resources", "folder")(self.root)
-            servers = self.backend(None).servers(dict(self.servers), self.root)
+            servers = (backend or self.backend(None)).servers(dict(self.servers), self.root)
             functions = dict(self.functions)
             declared = await resolve(functions, servers, {name: name for name in self.servers})
         except BaseException:
@@ -438,7 +441,8 @@ class Harness:
         """Run a sequence as one journalled run under `run_id`, and keep its record (§4.6, §4.7). A run that raises ends
         `failed`: the record says why, and what the walk had reached (JOB-17, RESUME-2)."""
         start = _now()
-        run = await self.begin(run_dir or self.runs / run_id)
+        run_dir = (run_dir or self.runs / run_id).resolve()
+        run = await self.begin(run_dir)
         try:
             journal = self.lookup("journal", "dbos")(self.runs / "journal.sqlite", self.instance.name, run_id)
             macro = Macro(
@@ -458,7 +462,7 @@ class Harness:
         record = build(
             params=self.params, settings_files=self.settings_files, backend=self.backend_name, attended=self.attended,
             start=start, end=_now(), failures=run.failures, events=self.hub.record(), labels=run.labels, run_id=run_id,
-            result=result, error=error, progress=macro.progress,
+            sequence=(result or {}).get("sequence") or macro.sequence, result=result, error=error, progress=macro.progress,
         )
         return SequenceResult(record.end_state, record.facts or {}, record.steps, run_id, record.summary, record)
 

@@ -119,3 +119,13 @@ async def test_a_node_that_exits_skipped_inside_a_fragment_follows_its_row(harne
     [step] = result.steps
     assert step["steps"] == [{"name": "lookup", "outcome": "skipped"}, {"name": "count", "outcome": "done"}]
     assert [e.text for e in h.events.record() if isinstance(e, ToolReturned) and e.call.name == "state_get"] == ["not set"]   # nothing was found to map
+
+
+@pytest.mark.feature("F16")
+async def test_a_failure_inside_a_fragment_keeps_its_reason_and_message_in_the_record(harness):   # JOB-9a, JOB-13
+    result = await harness(SCRIPTS).sequences.run("singles", {"name": "nope"})
+    assert result.end == "failed"
+    [inner] = [f for f in result.record.failures if f["node"] == "single/lookup"]
+    assert inner["reason"] == "precondition_unmet" and inner["message"] == "The register does not hold nope."
+    assert [s["name"] for s in result.steps[0]["steps"]] == ["lookup"]
+    assert result.steps[0]["steps"][0]["reason"] == "precondition_unmet"

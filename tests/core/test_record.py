@@ -85,7 +85,7 @@ def test_a_secret_setting_is_not_written_in_the_params():
 def record(**given):
     kept = dict(
         params={"NAME": "zeta"}, settings_files=["a.yaml"], backend="toy", attended=False, start="t0", end="t1",
-        failures=[], events=(started("scan#1"), responded("scan#1", 3)), labels=["scan#1"], run_id="refresh-1",
+        failures=[], events=(started("scan#1"), responded("scan#1", 3)), labels=["scan#1"], run_id="refresh-1", sequence="refresh",
     )
     return build(**{**kept, **given})
 

@@ -22,6 +22,7 @@ class RunRecord:
     failures: list[dict]
     notes: list[NodeNote]
     run_id: str | None
+    sequence: str | None   # the sequence run; None for a node run outside a sequence
     end_state: str | None
     steps: list | None
     facts: dict | None

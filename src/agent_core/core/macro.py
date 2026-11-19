@@ -31,6 +31,7 @@ class Macro:
     ):
         self._topology, self._backends, self._default = topology, backends, default_backend
         self._make_unit, self._journal, self._call_tool, self._check = make_unit, journal, call_tool, check
+        self.sequence: str | None = None   # the sequence this run walks: its stored name on a resume or a rerun
         self.progress: dict = {}   # the live `trail` and `facts` of the walk in this process, whether or not it ends
 
     def _walk(self, run_id: str, resuming: bool):
@@ -47,12 +48,14 @@ class Macro:
             return await (backend.run_fragment(unit) if fragment else backend.run_node(unit))
 
         async def walk(steps: Steps, name: str, facts: dict) -> WalkResult:
+            self.sequence = name   # a resumed or re-run workflow is given the name its journal stored
             port = WalkPort(self._topology, run_step, self._call_tool, self._check, steps)
             return await walker.walk_sequence(port, name, facts, self.progress)
 
         return walk
 
     async def start(self, run_id: str, name: str, facts: dict) -> WalkResult:
+        self.sequence = name
         return await self._journal.start(run_id, self._walk(run_id, False), name, facts)
 
     async def resume(self, run_id: str) -> WalkResult:

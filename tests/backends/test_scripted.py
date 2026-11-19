@@ -134,7 +134,3 @@ async def test_a_missing_script_file_names_the_file(tmp_path):
 async def test_without_the_setting_the_backend_says_so():
     with pytest.raises(ValueError, match="SCRIPTS"):
         await ScriptedBackend(ScriptedSettings()).run_node(unit_of(Replying()))
-
-
-async def test_close_has_nothing_to_close():
-    assert await ScriptedBackend(ScriptedSettings()).close() is None
