@@ -91,3 +91,30 @@ async def test_a_nodes_own_preconditions_apply_inside_a_fragment(harness):   # N
     h = harness(SCRIPTS)
     await h.sequences.run("pairs", {"names": ["nope"]})
     assert [e.node for e in h.events.record() if isinstance(e, NodeStarted)] == []   # `nope` never started a model run
+
+
+@pytest.mark.feature("F16")
+async def test_a_fragment_outputs_are_the_declared_ones_and_the_nodes_other_outputs_stay_inside(harness):   # SEQ-6
+    result = await harness(SCRIPTS).sequences.run("singles", {"name": "alpha"})
+    assert result.end == "done"
+    assert result.facts == {"name": "alpha", "total": 7}   # `lookup` produced `revision` and it is not the fragment's output
+
+
+@pytest.mark.feature("F16")
+async def test_a_transition_inside_a_fragment_maps_a_fact_to_the_input_a_node_declares(harness):   # SEQ-5
+    h = harness({"lookup": LOOKUP, "count": [[["state_get", {"key": "revisions"}]], *COUNT]})
+    await h.sequences.run("singles", {"name": "beta"})
+    assert [e.text for e in h.events.record() if isinstance(e, ToolReturned) and e.call.name == "state_get"] == ['"r2"']
+
+
+@pytest.mark.feature("F16")
+async def test_a_node_that_exits_skipped_inside_a_fragment_follows_its_row(harness):   # SEQ-8
+    h = harness({
+        "lookup": [[["exit", {"outcome": "skipped", "outputs": {}}]]],
+        "count": [[["state_get", {"key": "revisions"}]], *COUNT],
+    })
+    result = await h.sequences.run("singles", {"name": "alpha"})
+    assert result.end == "done"
+    [step] = result.steps
+    assert step["steps"] == [{"name": "lookup", "outcome": "skipped"}, {"name": "count", "outcome": "done"}]
+    assert [e.text for e in h.events.record() if isinstance(e, ToolReturned) and e.call.name == "state_get"] == ["not set"]   # nothing was found to map

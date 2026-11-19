@@ -49,7 +49,7 @@ _NOT_BUILT = {
     Feature.F22: "reserved",
     Feature.F23: "deferred",
 }
-MATRIX: Matrix = {
+FEATURES: Matrix = {
     **{feature: Entry("helper", means) for feature, means in _HELPERS.items()},
     **{feature: Entry("not built", means) for feature, means in _NOT_BUILT.items()},
 }
@@ -80,11 +80,13 @@ async def _no_checks(checks, facts, owner):
 
 @register_backend("scripted", settings=ScriptedSettings)
 class ScriptedBackend:
+    FEATURES = FEATURES   # the matrix is the class's: it is read without making a backend, which may need settings
+
     def __init__(self, settings: ScriptedSettings | None = None):
         self._settings = settings
 
     def features(self) -> Matrix:
-        return MATRIX
+        return self.FEATURES
 
     def servers(self, declared: Mapping[str, dict], root: Path) -> McpServers:
         return McpServers(declared, dict(os.environ), root)   # the environment as it is now: the facade has just set it

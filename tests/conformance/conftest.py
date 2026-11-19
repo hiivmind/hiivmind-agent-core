@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from audit import DESELECTED, RAN, all_matrices
+from audit import DESELECTED, all_matrices, record
 
 import agent_core
 from agent_core.contracts.matrix import Feature
@@ -92,7 +92,6 @@ def elsewhere(backend_name, delivered, tmp_path):
 # --- the matrix decides what each test is expected to do ---------------------------------------------------------------
 
 KEYS: dict[str, list[tuple[str, str]]] = {}   # node id -> the (backend, feature) pairs the test stands for
-PHASES: dict[str, list[bool]] = {}            # node id -> whether each phase of the test that has ended was good
 
 
 def _conformance(item) -> bool:
@@ -124,14 +123,7 @@ def pytest_deselected(items):
 
 
 def pytest_runtest_logreport(report):
-    """A test counts as run once it has passed, or failed as a strict xfail says it would: a skip never counts."""
+    """A test counts as run only when each phase was good (see `audit.record`): a skip never counts."""
     keys = KEYS.get(report.nodeid)
-    if keys is None:
-        return
-    if report.when == "call":
-        good = report.passed or (report.skipped and hasattr(report, "wasxfail"))
-    else:
-        good = not report.failed and not (report.when == "setup" and report.skipped)
-    PHASES.setdefault(report.nodeid, []).append(good)
-    if report.when == "teardown" and all(PHASES[report.nodeid]) and len(PHASES[report.nodeid]) == 3:
-        RAN.update(keys)
+    if keys is not None:
+        record(report, keys)

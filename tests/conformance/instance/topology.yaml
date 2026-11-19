@@ -15,6 +15,14 @@ fragments:
     transitions:
       lookup: {done: count, failed: end}
       count: {done: end, failed: end}
+  single:
+    inputs: [name]
+    outputs: [total]
+    exits: [done, failed]
+    start: lookup
+    transitions:
+      lookup: {done: {node: count, inputs: {revisions: revision}}, skipped: count, failed: end}
+      count: {done: end, failed: end}
 sequences:
   lookup_then_count:
     description: Look a name up, then count what was found.
@@ -27,3 +35,8 @@ sequences:
     start: pair
     transitions:
       pair: {done: end, failed: end}
+  singles:
+    description: Run the single fragment on a name.
+    start: single
+    transitions:
+      single: {done: end, failed: end}
