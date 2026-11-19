@@ -1,0 +1,29 @@
+nodes:
+  - {name: lookup, path: nodes/lookup.md}
+  - {name: ask, path: nodes/ask.md}
+  - {name: record, path: nodes/record.md}
+  - {name: count, path: nodes/count.md}
+exits:
+  done: route
+  failed: route
+fragments:
+  pair:
+    inputs: [names]
+    outputs: [revisions, revisions_failures, total]
+    exits: [done, failed]
+    start: {fan_out: lookup, over: names, as: name, into: revisions, max_concurrency: 2}
+    transitions:
+      lookup: {done: count, failed: end}
+      count: {done: end, failed: end}
+sequences:
+  lookup_then_count:
+    description: Look a name up, then count what was found.
+    start: lookup
+    transitions:
+      lookup: {done: {node: count, inputs: {revisions: revision}}, failed: end}
+      count: {done: end, failed: end}
+  pairs:
+    description: Run the pair fragment on the names.
+    start: pair
+    transitions:
+      pair: {done: end, failed: end}

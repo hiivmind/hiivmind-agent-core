@@ -1,8 +1,4 @@
-"""A toy backend that plays a script against core policy, a toy person, and the providers the facade reaches by name.
-
-The scripted backend and the stolen providers arrive in Task 10; until then the facade tests register these stand-ins
-(and `test_facade.py` registers `Files`, `Nobody` and `NoContext` under the names the registry's tables give).
-"""
+"""A toy backend that plays a script against core policy, and a toy person."""
 
 import asyncio
 import os
@@ -116,15 +112,3 @@ class ToyPerson:
         finally:
             self.open -= 1
 
-
-class Nobody:
-    async def tell(self, text):
-        pass
-
-    async def ask(self, question, label=""):
-        return None
-
-
-class NoContext:
-    async def build(self, request):
-        return ()

@@ -8,15 +8,15 @@ from pathlib import Path
 from unittest.mock import ANY
 
 import pytest
-from facade_support import NoContext, Nobody, Toy, ToyPerson
-from support import FIXTURE, FIXTURES, SEQUENCES, FolderSource
+from facade_support import Toy, ToyPerson
+from support import FIXTURE, FIXTURES, SEQUENCES
 
 import agent_core
 from agent_core.contracts import facade
 from agent_core.contracts.errors import FeatureNotSupported, RunCannotStart, ToolServerError
 from agent_core.contracts.events import Event, ModelResponded, NodeStarted, ToolReturned
 from agent_core.contracts.matrix import Entry, Feature
-from agent_core.contracts.registry import REGISTERED, REGISTERED_BACKENDS
+from agent_core.contracts.registry import REGISTERED_BACKENDS
 from agent_core.contracts.values import Message, Outcome, Usage
 from agent_core.core.registry import BACKENDS
 
@@ -45,13 +45,6 @@ STATUS = {"status": [
     [("exit", {"outcome": "done", "outputs": {"status_report": "ok"}})],
 ]}
 PLAIN = {"plain": [[("exit", {"outcome": "done", "outputs": {"done_work": "plain-work"}})]]}
-
-
-@pytest.fixture(autouse=True)
-def providers(monkeypatch):
-    """The providers of Task 10, as test stand-ins: the registry's tables name modules that do not exist yet."""
-    for kind, table in {"resources": {"folder": FolderSource}, "person": {"nobody": Nobody}, "context": {"none": NoContext}}.items():
-        monkeypatch.setitem(REGISTERED, kind, {**REGISTERED.get(kind, {}), **table})
 
 
 @pytest.fixture
