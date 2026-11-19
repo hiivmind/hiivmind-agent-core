@@ -7,6 +7,7 @@ sequences through the facade on the `langgraph` backend (the model is scripted) 
 import asyncio
 import json
 import os
+import signal
 import sys
 from pathlib import Path
 
@@ -109,6 +110,58 @@ async def test_close_ends_the_server_processes(servers, run_dir):
             return
         await asyncio.sleep(0.1)
     pytest.fail(f"the server process {pid} is still running after close")
+
+
+async def test_a_server_that_exits_mid_call_fails_the_one_call_in_flight(servers):        # TOOL-11e
+    with pytest.raises(ToolServerError) as e:
+        await asyncio.wait_for(servers.call("web__fetch", {"url": "https://example.org/a"}, {}), 30)
+    assert (e.value.server, e.value.tool) == ("web", "fetch")
+
+
+async def stalled(servers, server: str, tool: str, args: dict):
+    """A call of `tool` that the SDK will never answer (the coroutine of its adapter tool is made to wait for ever), started and in flight."""
+    session = servers._held[server].tools[tool]
+
+    async def never(*a, **kw):
+        await asyncio.Event().wait()
+
+    session.coroutine = never
+    call = asyncio.create_task(servers.call(f"{server}__{tool}", args, {}))
+    await asyncio.sleep(0.2)
+    assert not call.done()
+    return call
+
+
+async def test_a_connection_that_closes_under_a_call_the_sdk_never_answers_fails_it(servers, run_dir):   # TOOL-11e: EOF, one call
+    await servers.call("web__note", {"text": "x"}, {})
+    [pid] = {line["server_pid"] for line in tool_calls(run_dir)}
+    call = await stalled(servers, "web", "note", {"text": "y"})
+    os.kill(pid, signal.SIGKILL)   # the server ends: its output closes, with no answer to the call
+    with pytest.raises(ToolServerError) as e:
+        await asyncio.wait_for(call, 30)
+    assert (e.value.server, e.value.tool) == ("web", "note")
+    (run_dir / "web.up").touch()
+    assert await servers.call("web__note", {"text": "z"}, {}) == "noted on web"   # the next call opens a new session
+    assert len({line["server_pid"] for line in tool_calls(run_dir)}) == 2
+
+
+async def test_a_holder_that_fails_fails_the_calls_waiting_on_its_session(servers):       # TOOL-11e: the session ends with an error
+    await servers.call("web__note", {"text": "x"}, {})
+    call = await stalled(servers, "web", "note", {"text": "y"})
+    servers._held["web"].task.cancel()   # what the SDK does to a session when its transport fails under it
+    with pytest.raises(ToolServerError):
+        await asyncio.wait_for(call, 30)
+    assert await servers.call("web__note", {"text": "z"}, {}) == "noted on web"
+
+
+async def test_a_call_on_a_session_whose_server_went_while_idle_is_a_tool_server_error(servers, run_dir):   # TOOL-11e
+    await servers.call("web__note", {"text": "x"}, {})
+    [pid] = {line["server_pid"] for line in tool_calls(run_dir)}
+    os.kill(pid, signal.SIGKILL)
+    await asyncio.wait_for(servers._held["web"].lost.wait(), 30)
+    with pytest.raises(ToolServerError):
+        await servers.call("web__note", {"text": "y"}, {})
+    assert await servers.call("web__note", {"text": "z"}, {}) == "noted on web"
 
 
 @pytest.mark.parametrize("spec,message", [
