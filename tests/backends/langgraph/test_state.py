@@ -4,6 +4,7 @@ import asyncio
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage, ToolMessage
@@ -18,6 +19,9 @@ from agent_core.backends.langgraph.tools import sdk_tools  # noqa: E402
 from agent_core.contracts.policy import CallResult, Ending, Review, StateUpdate  # noqa: E402
 from agent_core.contracts.unit import DeclaredTools, Unit, UnitResult  # noqa: E402
 from agent_core.contracts.values import ToolSpec  # noqa: E402
+from agent_core.core.brief import VERB_SPECS  # noqa: E402
+from agent_core.core.functions import FunctionTool  # noqa: E402
+from agent_core.core.policy import NodePolicy  # noqa: E402
 
 SCHEMA = {"type": "object", "properties": {"key": {"type": "string"}, "value": {}}}
 
@@ -101,15 +105,46 @@ async def test_each_call_of_a_response_sees_the_state_before_it(tmp_path):   # C
     assert state["node"]["values"]["c"] == "red"
 
 
-async def test_a_failed_calls_writes_are_dropped_and_the_others_applied_in_order(tmp_path):   # Plan 1 Review Focus 5
-    steps = [
-        [["set", {"key": "c", "value": "red"}], ["boom", {}], ["set", {"key": "c", "value": "blue"}], ["set", {"key": "d", "value": 1}]],
-        [["exit", {}]],
-    ]
-    policy, state = await play(tmp_path, steps)
-    failed = next(m for m in state["messages"] if isinstance(m, ToolMessage) and m.name == "boom")
-    assert (failed.content, failed.status) == ("error: boom", "error")
-    assert (state["node"]["values"]["c"], state["node"]["values"]["d"]) == ("blue", 1)   # the later write of one name wins
+def _writes_then_raises(state):
+    state["leaked"] = "sentinel"   # a write the failing function made before it raised
+    raise RuntimeError("after writing")
+
+
+def _writes_a(state):
+    state["a"] = 1
+    return "ok"
+
+
+def _writes_b(state):
+    state["b"] = 2
+    return "ok"
+
+
+def _real_policy(*functions):
+    """A real `NodePolicy`, offering `state_set`, `state_get` and these functions (each filled with `state`)."""
+    contract = SimpleNamespace(name="n", inputs={}, outputs={})
+    tools = {f.__name__: FunctionTool(f.__name__, ToolSpec(f.__name__, f.__name__, {"type": "object"}), f, ("state",)) for f in functions}
+    specs = (VERB_SPECS["state_set"], VERB_SPECS["state_get"], *(t.spec for t in tools.values()))
+    start = {"inputs": {}, "values": {}, "outputs": {}, "session": {}, "rejections": 0, "ending": None}
+    return NodePolicy(
+        SimpleNamespace(contract=contract), label="t", instructions="# Procedure of the node that is running: `n`\n", tools=specs,
+        handover=(), opening="go", functions=tools, servers=None, person=None, resources=None, settings=None, events=Events(), start=start,
+    )
+
+
+async def test_a_failed_calls_writes_are_dropped_and_the_others_applied_in_order(tmp_path):   # Plan 1 Review Focus 5, CTL-5
+    policy = _real_policy(_writes_then_raises, _writes_a, _writes_b)
+    steps = [[
+        ["state_set", {"key": "c", "value": "red"}], ["_writes_then_raises", {}], ["_writes_a", {}],
+        ["state_set", {"key": "c", "value": "blue"}], ["_writes_b", {}],
+    ], "done"]
+    policy, state = await play(tmp_path, steps, policy)
+    failed = next(m for m in state["messages"] if isinstance(m, ToolMessage) and m.name == "_writes_then_raises")
+    assert (failed.content, failed.status) == ("error: _writes_then_raises raised RuntimeError: after writing", "error")
+    values = state["node"]["values"]
+    assert "leaked" not in values                                  # what the failed function wrote is dropped
+    assert values == {"c": "blue", "a": 1, "b": 2}                 # the others are applied, the later write of `c` wins
+    assert list(values) == ["c", "a", "b"]                         # in the order the model gave the calls
 
 
 async def test_settings_and_state_never_reach_the_model(tmp_path):   # TOOL-12
