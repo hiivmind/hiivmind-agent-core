@@ -1,30 +1,30 @@
 nodes:
-  - {name: refresh, path: skills/refresh}
-  - {name: status, path: skills/status}
-  - {name: survey, path: skills/survey}
-  - {name: shape, path: skills/shape}
-  - {name: stuck, path: skills/stuck}
-  - {name: halt, path: skills/halt}
-  - {name: giveup, path: skills/giveup}
-  - {name: silent, path: skills/silent}
-  - {name: guarded, path: skills/guarded}
-  - {name: gated, path: skills/gated}
-  - {name: gated_fn, path: skills/gated_fn}
-  - {name: gated_missing, path: skills/gated_missing}
-  - {name: gated_broken, path: skills/gated_broken}
-  - {name: plain, path: skills/plain}
-  - {name: tally, path: skills/tally}
-  - {name: ledger, path: skills/ledger}
-  - {name: locate, path: skills/locate}
-  - {name: consult, path: skills/consult}
-  - {name: fetcher, path: skills/fetcher}
-  - {name: gated_srv, path: skills/gated_srv}
-  - {name: locate_quiet, path: skills/locate_quiet}
-  - {name: asker, path: skills/asker}
-  - {name: gated_rec, path: skills/gated_rec}
-  - {name: gated_norec, path: skills/gated_norec}
-  - {name: improvise, path: skills/improvise}
-  - {name: gated_route, path: skills/gated_route}
+  - {name: refresh, path: nodes/refresh.md}
+  - {name: status, path: nodes/status.md}
+  - {name: survey, path: nodes/survey.md}
+  - {name: shape, path: nodes/shape.md}
+  - {name: stuck, path: nodes/stuck.md}
+  - {name: halt, path: nodes/halt.md}
+  - {name: giveup, path: nodes/giveup.md}
+  - {name: silent, path: nodes/silent.md}
+  - {name: guarded, path: nodes/guarded.md}
+  - {name: gated, path: nodes/gated.md}
+  - {name: gated_fn, path: nodes/gated_fn.md}
+  - {name: gated_missing, path: nodes/gated_missing.md}
+  - {name: gated_broken, path: nodes/gated_broken.md}
+  - {name: plain, path: nodes/plain.md}
+  - {name: tally, path: nodes/tally.md}
+  - {name: ledger, path: nodes/ledger.md}
+  - {name: locate, path: nodes/locate.md}
+  - {name: consult, path: nodes/consult.md}
+  - {name: fetcher, path: nodes/fetcher.md}
+  - {name: gated_srv, path: nodes/gated_srv.md}
+  - {name: locate_quiet, path: nodes/locate_quiet.md}
+  - {name: asker, path: nodes/asker.md}
+  - {name: gated_rec, path: nodes/gated_rec.md}
+  - {name: gated_norec, path: nodes/gated_norec.md}
+  - {name: improvise, path: nodes/improvise.md}
+  - {name: gated_route, path: nodes/gated_route.md}
 exits:
   done: route
   declined: route

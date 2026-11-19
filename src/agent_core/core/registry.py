@@ -1,29 +1,22 @@
 """Providers and backends by name.
 
-The core may not import a provider module, so the tables below hold module
-names as strings; a module is imported on first use and registers itself
-through the decorators in `agent_core.contracts.registry`.
+The core may not import a provider or a helper module, so the tables below hold module names as strings; a module is
+imported on first use and registers itself through the decorators in `agent_core.contracts.registry`.
 """
 
 import importlib
-from collections.abc import Sequence
-from pathlib import Path
+from collections.abc import Mapping
 
-from agent_core.contracts.loading import load_file
 from agent_core.contracts.registry import REGISTERED, REGISTERED_BACKENDS
 
-BACKENDS: dict[str, tuple[str, str]] = {
-    "langgraph": ("agent_core.backends.langgraph", "langchain"),
+BACKENDS: dict[str, tuple[str, str]] = {   # name -> (module, the package a missing module is blamed on; "" names the module)
     "scripted": ("agent_core.backends.scripted", ""),
+    "langgraph": ("agent_core.backends.langgraph", "langchain"),
 }
 PROVIDERS: dict[str, dict[str, str]] = {
+    "walk": {"topology": "agent_core.helpers.walk"},
     "context": {"none": "agent_core.context.none"},
-    "tool_source": {
-        "servers": "agent_core.tools.mcp_server",
-        "tools": "agent_core.tools.function",
-    },
     "resources": {"folder": "agent_core.resources.folder"},
-    "store": {"memory": "agent_core.stores.memory"},
     "person": {
         "terminal": "agent_core.person.terminal",
         "nobody": "agent_core.person.nobody",
@@ -47,11 +40,14 @@ class UnknownProvider(ValueError):
     pass
 
 
-def backend(name: str) -> tuple[type, type]:
-    if name in REGISTERED_BACKENDS:
-        return REGISTERED_BACKENDS[name]
+def backend(name: str, held: Mapping[str, tuple[type, type]] | None = None) -> tuple[type, type]:
+    """The (backend class, settings class) of `name`. `held` is what the caller has registered itself: it hides the
+    registry's backend of the same name."""
+    found = {**REGISTERED_BACKENDS, **(held or {})}
+    if name in found:
+        return found[name]
     if name not in BACKENDS:
-        known = ", ".join(sorted(set(BACKENDS) | set(REGISTERED_BACKENDS)))
+        known = ", ".join(sorted(set(BACKENDS) | set(found)))
         raise UnknownBackend(f"no backend `{name}`; backends are: {known}")
     module, package = BACKENDS[name]
     try:
@@ -65,18 +61,14 @@ def backend(name: str) -> tuple[type, type]:
     return REGISTERED_BACKENDS[name]
 
 
-def provider(kind: str, name: str) -> object:
-    found = REGISTERED.get(kind, {})
+def provider(kind: str, name: str, held: Mapping[str, object] | None = None) -> object:
+    """The provider `name` of `kind`, its module imported on first use. `held` is what the caller has registered itself:
+    it hides the registry's provider of the same name."""
+    found = {**REGISTERED.get(kind, {}), **(held or {})}
     if name not in found and name in PROVIDERS.get(kind, {}):
         importlib.import_module(PROVIDERS[kind][name])
-        found = REGISTERED.get(kind, {})
+        found = {**REGISTERED.get(kind, {}), **(held or {})}
     if name not in found:
         known = ", ".join(sorted(set(PROVIDERS.get(kind, {})) | set(found)))
         raise UnknownProvider(f"no {kind} `{name}`; {kind}s are: {known}")
     return found[name]
-
-
-def load_providers(root: Path, files: Sequence[str]) -> None:
-    """Import each instance file by path; its decorators register it."""
-    for file in files:
-        load_file(root / file)

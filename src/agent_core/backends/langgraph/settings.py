@@ -5,7 +5,7 @@ from pydantic_settings import SettingsConfigDict
 class LangGraphSettings(MountainAshBaseSettings):
     model_config = SettingsConfigDict(env_prefix="AGENT_CORE_LANGGRAPH_")
 
-    MODEL: str = "claude-sonnet-5-5"
+    MODEL: str                  # `provider:model`; there is no default (P20)
     MAX_TOKENS: int = 16000
     RECURSION_LIMIT: int = 120
-    MAX_RETRIES: int = 8   # the model client's retries of a refused or failed call: 429, 5xx, a dropped connection (RTY-1)
+    MAX_RETRIES: int = 8        # RTY-1

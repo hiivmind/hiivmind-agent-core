@@ -1,0 +1,9 @@
+name: model-tests
+core: 0
+entry: topology.yaml
+policy: POLICY.md
+backend: langgraph
+tools:
+  lookup_revision: revisions:lookup_revision
+  known_name: revisions:known_name
+  slow_lookup: revisions:slow_lookup

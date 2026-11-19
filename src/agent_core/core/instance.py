@@ -2,40 +2,43 @@
 
 import json
 import re
-from dataclasses import dataclass, field
+from collections.abc import Mapping
+from dataclasses import dataclass
 from pathlib import Path
 
 import yaml
 from jsonschema import Draft202012Validator
 from yaml.constructor import ConstructorError
 
-from agent_core.contracts.registry import REGISTERED
 from agent_core.contracts.resources import ResourceSource
-from agent_core.core.registry import PROVIDERS, load_providers
+from agent_core.contracts.topology import (
+    END,
+    Check,
+    FanOut,
+    FragmentDef,
+    Link,
+    NodeContract,
+    SequenceDef,
+    Step,
+    Target,
+    ToolList,
+    Topology,
+)
 
 SCHEMAS = Path(__file__).parent / "schemas"
-BUILT_IN_SOURCES = ("servers", "tools")
-BUILT_IN_OUTCOMES: tuple[str, ...] = ("skipped", "stopped")   # every node may exit with these (SEQ-8)
 
 
 @dataclass(frozen=True)
-class Node:
-    name: str
+class NodeDef:
+    contract: NodeContract
     file: str
     description: str
-    inputs: dict
-    outputs: dict
-    exits: tuple[str, ...]
+    input_docs: dict
+    output_schemas: dict
     allowed_tools: tuple[str, ...]
-    improvisation: str | None
-    preconditions: tuple[dict, ...]
+    preconditions: tuple[Check, ...]
     context: str
     body: str
-
-    @property
-    def outcomes(self) -> tuple[str, ...]:
-        """The declared exits, then each built-in outcome not already among them."""
-        return self.exits + tuple(o for o in BUILT_IN_OUTCOMES if o not in self.exits)
 
 
 @dataclass(frozen=True)
@@ -44,15 +47,13 @@ class Instance:
     name: str
     core: int
     backend: str
-    topology: dict
-    policy: str                       # the text of POLICY.md
-    nodes: dict[str, Node]
-    servers: dict
-    functions: dict[str, str]
+    policy: str                       # the text of the policy file
+    topology: Topology
+    nodes: Mapping[str, NodeDef]
+    servers: Mapping[str, dict]
+    functions: Mapping[str, str]
     settings: dict | None
-    providers: tuple[str, ...] = ()   # instance files that register providers
-    sources: dict[str, dict] = field(default_factory=dict)   # key -> {provider: <tool source>, ...}; tools are named <key>__<tool>
-    sequences: dict[str, dict] = field(default_factory=dict)  # name -> {description, start, inputs?, checks?, transitions}
+    improvisation: str | None         # "on" or "off", from the topology; None when it names none
 
 
 class InstanceError(ValueError):
@@ -88,7 +89,7 @@ def _parse(text: str, file: str):
 
 def _validate(data, schema: str, file: str) -> None:
     validator = Draft202012Validator(json.loads((SCHEMAS / f"{schema}.schema.json").read_text()))
-    error = max(validator.iter_errors(data), key=lambda e: -len(e.path), default=None)
+    error = max(validator.iter_errors(data), key=lambda e: len(e.absolute_path), default=None)
     if error is not None:
         field_path = ".".join(str(p) for p in error.absolute_path)
         raise InstanceError(f"{file}: {field_path + ': ' if field_path else ''}{error.message}")
@@ -117,8 +118,11 @@ def _improvisation(value) -> str | None:
     return value
 
 
-def _node(resources: ResourceSource, name: str, directory: str) -> Node:
-    file = f"{directory.rstrip('/')}/SKILL.md"
+def _check(entry: dict) -> Check:
+    return Check(entry["tool"], entry.get("args") or {}, entry["message"], entry.get("outcome"))
+
+
+def _node(resources: ResourceSource, name: str, file: str) -> NodeDef:
     text = _read(resources, file)
     if not text.startswith("---\n"):
         raise InstanceError(f"{file}: the file must begin with a frontmatter block between `---` lines")
@@ -130,68 +134,113 @@ def _node(resources: ResourceSource, name: str, directory: str) -> Node:
     if not isinstance(front, dict):
         raise InstanceError(f"{file}: the frontmatter must be a mapping")
     _validate(front, "node", file)
-    return Node(
-        name=name,
+    inputs, outputs = front.get("inputs") or {}, front.get("outputs") or {}
+    return NodeDef(
+        contract=NodeContract(name, tuple(inputs), tuple(outputs), tuple(front.get("exits") or ())),
         file=file,
         description=front["description"],
-        inputs=front.get("inputs") or {},
-        outputs=front.get("outputs") or {},
-        exits=tuple(front.get("exits") or ()),
+        input_docs=inputs,
+        output_schemas=outputs,
         allowed_tools=tuple(front.get("allowed-tools") or ()),
-        improvisation=_improvisation(front.get("improvisation")),
-        preconditions=tuple(front.get("preconditions") or ()),
+        preconditions=tuple(_check(c) for c in front.get("preconditions") or ()),
         context=front.get("context", "none"),
         body=body,
     )
 
 
-def _tool_sources() -> list[str]:
-    names = set(PROVIDERS.get("tool_source", {})) | set(REGISTERED.get("tool_source", {}))
-    return sorted(names - set(BUILT_IN_SOURCES))
+class _Targets:
+    """Turns the YAML of a transition target into a contract value, checking the names it uses."""
+
+    def __init__(self, file: str, nodes: Mapping[str, NodeDef], fragments: Mapping[str, dict] | None):
+        """`fragments` None: a fragment's own targets, which name nodes only."""
+        self.file, self.nodes, self.fragments = file, nodes, fragments
+
+    def step_name(self, name: str) -> str:
+        if name not in self.nodes and name not in (self.fragments or {}):
+            what = "node" if self.fragments is None else "node or fragment"
+            raise InstanceError(f"{self.file}: no {what} `{name}`")
+        return name
+
+    def fan_out(self, entry: dict) -> FanOut:
+        node = entry["fan_out"]
+        if node not in self.nodes:
+            raise InstanceError(f"{self.file}: no node `{node}`")
+        over = entry["over"]
+        if isinstance(over, dict):
+            over = ToolList(over["tool"], over.get("args") or {})
+        return FanOut(node, over, entry["as"], entry["into"], entry.get("max_concurrency", 4))
+
+    def target(self, entry) -> Target:
+        if isinstance(entry, str):
+            return END if entry == END else Step(self.step_name(entry))
+        if "link" in entry:
+            return Link(entry["link"])
+        if "fan_out" in entry:
+            return self.fan_out(entry)
+        return Step(self.step_name(entry["node"]), dict(entry["inputs"]))
+
+    def start(self, entry) -> Target:
+        return self.fan_out(entry) if isinstance(entry, dict) else Step(self.step_name(entry))
+
+    def transitions(self, table: Mapping[str, dict]) -> dict:
+        return {source: {outcome: self.target(t) for outcome, t in row.items()} for source, row in table.items()}
 
 
-def _check_keys(data: dict, file: str) -> None:
-    for key, source in (data.get("sources") or {}).items():
-        if source["provider"] not in _tool_sources():
-            raise InstanceError(
-                f"{file}: source \"{key}\": no tool source `{source['provider']}`; "
-                f"tool sources are: {', '.join(_tool_sources())}"
-            )
+def _sequences(raw: Mapping[str, dict], targets: _Targets) -> dict[str, SequenceDef]:
+    return {
+        name: SequenceDef(
+            name=name,
+            description=seq["description"],
+            start=targets.start(seq["start"]),
+            inputs=seq.get("inputs") or {},
+            checks=tuple(_check(c) for c in seq.get("checks") or ()),
+            transitions=targets.transitions(seq["transitions"]),
+        )
+        for name, seq in raw.items()
+    }
+
+
+def _fragments(raw: Mapping[str, dict], targets: _Targets) -> dict[str, FragmentDef]:
+    return {
+        name: FragmentDef(
+            name=name,
+            inputs=tuple(f["inputs"]),
+            outputs=tuple(f["outputs"]),
+            exits=tuple(f["exits"]),
+            start=targets.start(f["start"]),
+            transitions=targets.transitions(f["transitions"]),
+        )
+        for name, f in raw.items()
+    }
 
 
 def load_instance(instance_yaml: Path, resources: ResourceSource) -> Instance:
     file = Path(instance_yaml).name
     data = _yaml_file(resources, file, "instance")
-    for key in ("servers", "tools", "sources"):
-        data.setdefault(key, {})
-    providers = tuple(data.get("providers") or ())
-    if providers:
-        root = Path(instance_yaml).resolve().parent
-        try:
-            load_providers(root, providers)
-        except FileNotFoundError as e:
-            raise InstanceError(f"{file}: provider file not found: {e.filename or e}") from None
-    _check_keys(data, file)
-    topology = _yaml_file(resources, data["entry"], "topology")
-    if "improvisation" in topology and "setting" in topology["improvisation"]:
-        topology["improvisation"]["setting"] = _improvisation(topology["improvisation"]["setting"])
-    nodes: dict[str, Node] = {}
-    for entry in topology["nodes"]:
-        if entry["name"] in nodes:
-            raise InstanceError(f"{data['entry']}: the node `{entry['name']}` is listed twice")
-        nodes[entry["name"]] = _node(resources, entry["name"], entry["path"])
+    entry = data["entry"]
+    raw = _yaml_file(resources, entry, "topology")
+    nodes: dict[str, NodeDef] = {}
+    for item in raw["nodes"]:
+        if item["name"] in nodes:
+            raise InstanceError(f"{entry}: the node `{item['name']}` is listed twice")
+        nodes[item["name"]] = _node(resources, item["name"], item["path"])
+    raw_fragments = raw.get("fragments") or {}
+    targets = _Targets(entry, nodes, raw_fragments)
+    topology = Topology(
+        nodes={name: n.contract for name, n in nodes.items()},
+        sequences=_sequences(raw.get("sequences") or {}, targets),
+        fragments=_fragments(raw_fragments, _Targets(entry, nodes, None)),
+    )
     return Instance(
         root=Path(instance_yaml).resolve().parent,
         name=data["name"],
         core=data["core"],
         backend=data["backend"],
-        topology=topology,
         policy=_read(resources, data["policy"]),
+        topology=topology,
         nodes=nodes,
-        servers=data["servers"],
-        functions=data["tools"],
+        servers=data.get("servers") or {},
+        functions=data.get("tools") or {},
         settings=data.get("settings"),
-        providers=providers,
-        sources=data["sources"],
-        sequences=topology.get("sequences") or {},
+        improvisation=_improvisation((raw.get("improvisation") or {}).get("setting")),
     )

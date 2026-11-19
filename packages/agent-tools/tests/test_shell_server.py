@@ -7,12 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from agent_core.backends.scripted import ScriptedBackend
-from agent_core.core.instance import load_instance
-from agent_core.core.node_runner import NodeRunner
-from agent_core.person.nobody import Nobody
-from agent_core.resources.folder import FolderResources
-from agent_core.tools.mcp_server import McpServerSource
+from agent_core.helpers.mcp import McpServers
 
 SHELL = {"shell": {"command": sys.executable, "args": ["-m", "agent_tools.shell_server"]}}  # as an instance declares it
 
@@ -21,7 +16,7 @@ SHELL = {"shell": {"command": sys.executable, "args": ["-m", "agent_tools.shell_
 async def shell(tmp_path):
     """The shell server, reached as an instance reaches it; no AGENT_CORE_INSTANCE is set."""
     env = {k: v for k, v in os.environ.items() if k != "AGENT_CORE_INSTANCE"}
-    source = McpServerSource(SHELL, env, tmp_path)
+    source = McpServers(SHELL, env, tmp_path)
     yield source
     await source.close()
 
@@ -31,7 +26,7 @@ async def shell_in(tmp_path):
     """The shell server with AGENT_CORE_INSTANCE set to a directory other than the one the server starts in."""
     instance = tmp_path / "the-instance"
     instance.mkdir()
-    source = McpServerSource(SHELL, {**os.environ, "AGENT_CORE_INSTANCE": str(instance)}, tmp_path)
+    source = McpServers(SHELL, {**os.environ, "AGENT_CORE_INSTANCE": str(instance)}, tmp_path)
     yield source, instance
     await source.close()
 
@@ -116,60 +111,19 @@ async def test_a_failing_command_is_a_result_not_an_error(shell):
     assert r["exit"] == 7 and r["stderr"].strip() == "oops"
 
 
-@pytest.fixture
-def instance_with_shell(tmp_path):
-    """A one-node instance that declares the shell server and a node that may call `shell__run`."""
-    root = tmp_path / "loud-instance"
-    (root / "skills" / "loud").mkdir(parents=True)
-    (root / "instance.yaml").write_text(
-        "name: loud\ncore: 0\nentry: topology.yaml\npolicy: POLICY.md\nbackend: scripted\n"
-        f"servers:\n  shell: {{command: {sys.executable}, args: [-m, agent_tools.shell_server]}}\n"
-    )
-    (root / "POLICY.md").write_text("Follow the procedure.\n")
-    (root / "topology.yaml").write_text(
-        "nodes:\n  - {name: loud, path: skills/loud}\nexits:\n  done: route\n  failed: route\n"
-    )
-    (root / "skills" / "loud" / "SKILL.md").write_text(
-        "---\nname: loud\ndescription: Run a command that prints a lot.\ninputs: {}\n"
-        "outputs:\n  said: {type: string, description: what was seen}\nexits: [done, failed]\nallowed-tools: [shell__run]\n---\n"
-        "# Loud\n\n## Steps\n\n1. CALL `shell__run` with `command` set to `loud`.\n2. EXIT `done` with output `said` set to `seen`.\n"
-    )
-    return root
-
-
-async def test_a_node_run_carries_on_after_a_cut_shell_output_and_the_result_says_how_much(instance_with_shell):   # R10
-    instance = load_instance(instance_with_shell / "instance.yaml", FolderResources(instance_with_shell))
-    source = McpServerSource(
-        instance.servers, {**os.environ, "AGENT_CORE_INSTANCE": str(instance_with_shell)}, instance_with_shell
-    )
-    seen = {}
-
-    class Watching(ScriptedBackend):
-        async def drive(self, brief, controller):
-            seen["controller"] = controller
-            return await super().drive(brief, controller)
-
-    script = [
-        [["shell__run", {"command": "python -c \"print('x' * 100000 + 'END')\""}]],
-        [["exit", {"outcome": "done", "outputs": {"said": "seen"}}]],
-    ]
-    try:
-        tools = {spec.name: (source, spec) for spec in await source.tools()}
-        runner = NodeRunner(
-            instance, None, tools, frozenset(), Nobody(), FolderResources(instance_with_shell), []
-        )
-        result = await runner.run("loud", {}, driver=Watching(script=script), label="loud#1")
-    finally:
-        await source.close()
-    assert result["outcome"] == "done" and result["outputs"] == {"said": "seen"}  # the run went on past the cut output
-    shown = json.loads(seen["controller"].run.record[0].result)  # what the model was shown
-    assert shown["cut"] >= 80000 and len(shown["stdout"]) <= 20000 and shown["stdout"].rstrip().endswith("END")
+async def test_a_cut_shell_output_comes_back_whole_enough_to_carry_on_and_says_how_much(shell):   # R10
+    """What a node run is shown for a very large output: the server's own text, tail kept, `cut` saying how much."""
+    text = await shell.call("shell__run", {"command": "python -c \"print('x' * 100000 + 'END')\""}, {})
+    shown = json.loads(text)
+    assert shown["exit"] == 0 and shown["cut"] >= 80000 and len(shown["stdout"]) <= 20000
+    assert shown["stdout"].rstrip().endswith("END")
+    assert await shell.call("shell__run", {"command": "echo after"}, {})  # the connection still answers
 
 
 @pytest.mark.skipif(shutil.which("npx") is None, reason="npx is not installed; the reference file server is run with it")
 async def test_the_file_server_named_in_the_readme_starts_and_reads_a_file(tmp_path):
     (tmp_path / "note.txt").write_text("hello from a file")
-    files = McpServerSource(
+    files = McpServers(
         {"files": {"command": "npx", "args": ["-y", "@modelcontextprotocol/server-filesystem", str(tmp_path)]}},
         dict(os.environ),
         tmp_path,

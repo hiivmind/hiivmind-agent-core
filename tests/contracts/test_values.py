@@ -1,79 +1,55 @@
 import dataclasses
+import inspect
 
 import pytest
 
-from agent_core.contracts import (
-    Brief, EndRun, HandoverRequest, Message, ModelResponse, Result, RunEnd, ToolCall, ToolError, ToolServerError,
-    ToolSpec,
-)
+from agent_core.contracts.context import HandoverRequest
+from agent_core.contracts.person import Person
+from agent_core.contracts.errors import FeatureNotSupported, ToolServerError
+from agent_core.contracts.matrix import Entry, Feature
+from agent_core.contracts.topology import NodeContract
+from agent_core.contracts.values import BUILT_IN_OUTCOMES, HARNESS_REASONS
+from agent_core.contracts.walk import RETRY_PAUSE, WalkResult
 
 
-def test_values_are_frozen():
-    with pytest.raises(dataclasses.FrozenInstanceError):
-        Brief("i", (), (), "o").opening = "x"
+def test_feature_not_supported_names_the_feature_backend_and_reason():
+    e = FeatureNotSupported(Feature.F19, "toy", Entry("divergent", "its SDK has no event stream"))
+    assert str(e) == "streaming is divergent on backend toy: its SDK has no event stream"
 
 
-def test_a_brief_is_hashable_only_through_its_identity_and_holds_tuples():
-    b = Brief("i", (ToolSpec("t", "d", {}),), (Message("user", "hello"),), "Run the node.")
-    assert isinstance(b.tools, tuple) and isinstance(b.handover, tuple)
+def test_a_walk_result_is_a_typed_dict_with_the_four_keys():
+    assert set(WalkResult.__annotations__) == {"end", "trail", "facts", "summary", "sequence"}
 
 
-def test_everything_is_exported_from_the_package():
-    import agent_core.contracts as c
-    for name in ["ToolSpec", "Message", "Brief", "ToolCall", "ModelResponse", "Result", "EndRun", "RunEnd", "ToolError",
-                 "ToolServerError", "NodeDriver", "NodeController", "ContextStrategy", "HandoverRequest", "ToolSource",
-                 "ResourceSource", "State", "StateStore", "Person"]:
-        assert hasattr(c, name), name
+def test_a_contracts_outcomes_add_the_built_ins_once():
+    assert NodeContract("n", (), (), ("done", "stopped")).outcomes == ("done", "stopped", "skipped")
 
 
-def test_defaults():
-    m = Message("call")
-    assert (m.text, m.call_id, m.name, m.result) == ("", "", "", "") and m.args == {}
-    assert Message("call").args is not Message("call").args
-    assert Result("x").error is False
-    assert EndRun() == EndRun()
+def test_fixed_values():
+    assert BUILT_IN_OUTCOMES == ("skipped", "stopped")
+    assert HARNESS_REASONS == ("needs_input", "invalid_output", "no_exit", "unknown_placeholder", "precondition_unmet")
+    assert RETRY_PAUSE == 60
 
 
-def test_values_carry_their_fields():
-    r = ModelResponse("t", (ToolCall("1", "n", {"a": 1}),), None, 3, 4)
-    assert r.calls[0].args == {"a": 1} and r.sent is None and (r.cache_read, r.cache_written) == (3, 4)
-    assert RunEnd(True, "bye") == RunEnd(by_controller=True, said="bye")
+def test_tool_server_error_message():
+    e = ToolServerError("srv", "t", "boom")
+    assert (e.server, e.tool) == ("srv", "t")
+    assert str(e) == "tool server `srv` did not answer the call to `t`: boom"
+
+
+def test_feature_value_is_its_id_and_looks_up_by_id():
+    assert Feature.F1.value == "F1"
+    assert Feature("F19") is Feature.F19 and Feature("F19").title == "streaming"
 
 
 def test_handover_request_is_frozen():
     async def summarise(a: str, b: str) -> str:
         return a + b
-    h = HandoverRequest((), {}, "n", {}, summarise)
+    h = HandoverRequest((), {}, "n", {}, NodeContract("n", (), (), ("done",)), summarise)
     with pytest.raises(dataclasses.FrozenInstanceError):
         h.node = "x"
 
 
-def test_errors_are_distinct_exceptions():
-    assert issubclass(ToolError, Exception) and issubclass(ToolServerError, Exception)
-    assert not issubclass(ToolError, ToolServerError) and not issubclass(ToolServerError, ToolError)
-
-
 def test_person_ask_takes_a_label():
-    import inspect
-    from agent_core.contracts import Person
     p = inspect.signature(Person.ask).parameters
     assert list(p) == ["self", "question", "label"] and p["label"].default == ""
-
-
-def test_each_contract_imports_from_its_own_module():
-    import importlib
-    layout = {
-        "values": ["ToolSpec", "Message", "Brief", "ToolCall", "ModelResponse", "Result", "EndRun", "RunEnd"],
-        "errors": ["ToolError", "ToolServerError"],
-        "backend": ["NodeDriver"],
-        "controller": ["NodeController"],
-        "context": ["ContextStrategy", "HandoverRequest"],
-        "tools": ["ToolSource"],
-        "resources": ["ResourceSource"],
-        "state": ["State", "StateStore"],
-        "person": ["Person"],
-    }
-    for module, names in layout.items():
-        m = importlib.import_module(f"agent_core.contracts.{module}")
-        for name in names:
-            assert getattr(m, name).__module__ == m.__name__, (module, name)

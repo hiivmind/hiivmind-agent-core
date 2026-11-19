@@ -26,3 +26,4 @@ def register(kind: str, name: str) -> Callable[[T], T]:
         return obj
 
     return decorate
+

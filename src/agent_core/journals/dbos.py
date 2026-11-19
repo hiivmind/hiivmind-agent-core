@@ -16,6 +16,7 @@ from pathlib import Path
 from dbos import DBOS, SetWorkflowID
 
 from agent_core.contracts.journal import Walk
+from agent_core.contracts.walk import WalkResult
 from agent_core.contracts.registry import register
 
 _RUN: dict = {}   # the walk this process runs; DBOS records a workflow's arguments, so the workflow reaches it here
@@ -47,7 +48,7 @@ class _Steps:
 
 
 @DBOS.workflow()
-async def _sequence(name: str, facts: dict) -> dict:
+async def _sequence(name: str, facts: dict) -> WalkResult:
     return await _RUN["walk"](_Steps(), name, facts)
 
 
@@ -80,23 +81,32 @@ class DbosJournal:
         self._launch(walk, f"{run_id}~{secrets.token_hex(3)}")
         await DBOS.register_queue_async(self._queue)
 
-    async def start(self, run_id: str, walk: Walk, name: str, facts: dict) -> dict:
+    async def start(self, run_id: str, walk: Walk, name: str, facts: dict) -> WalkResult:
         self._launch(walk, run_id)
         with SetWorkflowID(run_id):
             return await _sequence(name, facts)
 
-    async def resume(self, run_id: str, walk: Walk) -> dict:
+    async def resume(self, run_id: str, walk: Walk) -> WalkResult:
         await self._own_queue(walk, run_id)
         handle = await DBOS.resume_workflow_async(run_id, queue_name=self._queue)
         return await handle.get_result()
 
-    async def rerun(self, run_id: str, from_run: str, step: int, walk: Walk) -> dict:
+    async def rerun(self, run_id: str, from_run: str, step: int, walk: Walk) -> WalkResult:
         await self._own_queue(walk, run_id)
         with SetWorkflowID(run_id):
             handle = await DBOS.fork_workflow_async(
                 from_run, step, application_version=_version(), queue_name=self._queue
             )
         return await handle.get_result()
+
+    async def sequence(self, run_id: str) -> str | None:
+        if not self._launched:
+            return None
+        found = await DBOS.list_workflows_async(workflow_ids=[run_id])
+        if not found:
+            return None
+        args = found[0].input["args"]   # the workflow's own arguments: (sequence name, facts)
+        return args[0] if args else None
 
     async def close(self) -> None:
         if self._launched:

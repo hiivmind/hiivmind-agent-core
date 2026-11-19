@@ -12,8 +12,8 @@ def test_reads_a_file_relative_to_the_root(tmp_path):
 
 
 def test_a_missing_file_error_names_the_path(tmp_path):
-    with pytest.raises(FileNotFoundError, match=r"skills/x/SKILL\.md"):
-        FolderResources(tmp_path).read("skills/x/SKILL.md")
+    with pytest.raises(FileNotFoundError, match=r"nodes/x\.md"):
+        FolderResources(tmp_path).read("nodes/x.md")
 
 
 def test_folder_refuses_a_path_outside_its_root(tmp_path):

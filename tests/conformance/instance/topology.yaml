@@ -1,0 +1,79 @@
+nodes:
+  - {name: lookup, path: nodes/lookup.md}
+  - {name: ask, path: nodes/ask.md}
+  - {name: record, path: nodes/record.md}
+  - {name: count, path: nodes/count.md}
+exits:
+  done: route
+  failed: route
+fragments:
+  pair:
+    inputs: [names]
+    outputs: [revisions, revisions_failures, total]
+    exits: [done, failed]
+    start: {fan_out: lookup, over: names, as: name, into: revisions, max_concurrency: 2}
+    transitions:
+      lookup: {done: count, failed: end}
+      count: {done: end, failed: end}
+  single:
+    inputs: [name]
+    outputs: [total]
+    exits: [done, failed]
+    start: lookup
+    transitions:
+      lookup: {done: {node: count, inputs: {revisions: revision}}, skipped: count, failed: end}
+      count: {done: end, failed: end}
+  tolerant:
+    inputs: [name]
+    outputs: [total]
+    exits: [done, failed]
+    start: lookup
+    transitions:
+      lookup: {done: count, failed: count}
+      count: {done: end, failed: end}
+  tally:
+    inputs: [names]
+    outputs: [totals, totals_failures]
+    exits: [done, failed]
+    start: {fan_out: count, over: names, as: revisions, into: totals, max_concurrency: 2}
+    transitions:
+      count: {done: end, failed: end}
+  roster:
+    inputs: []
+    outputs: [revisions, revisions_failures]
+    exits: [done, failed]
+    start: {fan_out: lookup, over: {tool: all_names}, as: name, into: revisions}
+    transitions:
+      lookup: {done: end, failed: end}
+sequences:
+  tallies:
+    description: Count each name with the tally fragment, two at a time.
+    start: tally
+    transitions:
+      tally: {done: end, failed: end}
+  rosters:
+    description: Look up the names the register lists, with the roster fragment.
+    start: roster
+    transitions:
+      roster: {done: end, failed: end}
+  tolerates:
+    description: Run the tolerant fragment on a name.
+    start: tolerant
+    transitions:
+      tolerant: {done: end, failed: end}
+  lookup_then_count:
+    description: Look a name up, then count what was found.
+    start: lookup
+    transitions:
+      lookup: {done: {node: count, inputs: {revisions: revision}}, failed: end}
+      count: {done: end, failed: end}
+  pairs:
+    description: Run the pair fragment on the names.
+    start: pair
+    transitions:
+      pair: {done: end, failed: end}
+  singles:
+    description: Run the single fragment on a name.
+    start: single
+    transitions:
+      single: {done: end, failed: end}

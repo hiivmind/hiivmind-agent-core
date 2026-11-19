@@ -13,14 +13,27 @@ dependencies = [
     "dbos>=3.5,<4",
 ]
 
-[project.optional-dependencies]
-langgraph = ["langchain>=1.5,<2", "langgraph>=1.2,<2", "langchain-anthropic>=1.7,<2", "anthropic>=2.8,<3"]
-
 [project.scripts]
-agent-core = "agent_core.core.cli:main"
+agent-core = "agent_core.cli:main"
+
+[project.optional-dependencies]
+langgraph = [
+    "langchain>=1.5,<2",
+    "langchain-mcp-adapters>=0.3,<0.4",
+    "langgraph>=1.2,<2",
+    "langgraph-checkpoint-sqlite>=3,<4",
+]
+anthropic = [
+    "anthropic>=2.8,<3",
+    "langchain-anthropic>=1.7,<2",
+]
+openai = [
+    "langchain-openai>=1,<2",
+    "openai>=2,<3",
+]
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio", "agent-tools"]
+dev = ["pytest", "pytest-asyncio", "agent-tools", "agent-core[langgraph,anthropic,openai]"]
 
 [build-system]
 requires = ["hatchling"]
@@ -40,5 +53,6 @@ members = ["packages/*"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
-markers = ["model: calls a model provider and costs money"]
+testpaths = ["tests", "packages/agent-tools/tests"]
+markers = ["model: calls a model provider and costs money", "feature(id): the facade feature a conformance test exercises"]
 addopts = "-m 'not model'"

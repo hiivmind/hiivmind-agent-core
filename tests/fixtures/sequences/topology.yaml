@@ -1,17 +1,28 @@
 nodes:
-  - {name: update-sources, path: skills/update-sources}
-  - {name: scan, path: skills/scan}
-  - {name: index, path: skills/index}
-  - {name: verify, path: skills/verify}
-  - {name: publish, path: skills/publish}
-  - {name: status, path: skills/status}
-  - {name: migrate, path: skills/migrate}
-  - {name: graph, path: skills/graph}
-  - {name: asker, path: skills/asker}
-  - {name: wrap, path: skills/wrap}
+  - {name: update-sources, path: nodes/update-sources.md}
+  - {name: scan, path: nodes/scan.md}
+  - {name: index, path: nodes/index.md}
+  - {name: verify, path: nodes/verify.md}
+  - {name: publish, path: nodes/publish.md}
+  - {name: status, path: nodes/status.md}
+  - {name: migrate, path: nodes/migrate.md}
+  - {name: graph, path: nodes/graph.md}
+  - {name: asker, path: nodes/asker.md}
+  - {name: wrap, path: nodes/wrap.md}
+  - {name: first, path: nodes/first.md}
+  - {name: close, path: nodes/close.md}
 exits:
   done: route
   failed: route
+fragments:
+  tail:
+    inputs: []
+    outputs: [wrapped, closed]
+    exits: [done, failed]
+    start: wrap
+    transitions:
+      wrap: {done: close, failed: end}
+      close: {done: end, failed: end}
 sequences:
   refresh:
     description: Bring the corpus up to date with its sources.
@@ -65,3 +76,8 @@ sequences:
     transitions:
       asker: {done: wrap, skipped: wrap, declined: wrap, failed: end}
       wrap: {done: end, failed: end}
+  with-tail:
+    description: A node, then the tail fragment.
+    start: first
+    transitions:
+      first: {done: tail, failed: end}

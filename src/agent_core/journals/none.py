@@ -1,6 +1,7 @@
 from collections.abc import Awaitable, Callable
 
 from agent_core.contracts.journal import Walk
+from agent_core.contracts.walk import WalkResult
 from agent_core.contracts.registry import register
 
 
@@ -21,14 +22,17 @@ class _Steps:
 class NoJournal:
     """Runs each step and keeps nothing: there is nothing to resume."""
 
-    async def start(self, run_id: str, walk: Walk, name: str, facts: dict) -> dict:
+    async def start(self, run_id: str, walk: Walk, name: str, facts: dict) -> WalkResult:
         return await walk(_Steps(), name, facts)
 
-    async def resume(self, run_id: str, walk: Walk) -> dict:
+    async def resume(self, run_id: str, walk: Walk) -> WalkResult:
         raise NotImplementedError
 
-    async def rerun(self, run_id: str, from_run: str, step: int, walk: Walk) -> dict:
+    async def rerun(self, run_id: str, from_run: str, step: int, walk: Walk) -> WalkResult:
         raise NotImplementedError
+
+    async def sequence(self, run_id: str) -> str | None:
+        return None   # nothing is kept
 
     async def close(self) -> None:
         pass

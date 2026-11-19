@@ -4,6 +4,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Protocol
 
+from .topology import NodeContract
 from .values import Message
 
 
@@ -13,6 +14,7 @@ class HandoverRequest:
     facts: dict
     node: str
     inputs: dict
+    contract: NodeContract
     summarise: Callable[[str, str], Awaitable[str]]
 
 

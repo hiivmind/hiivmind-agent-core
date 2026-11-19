@@ -1,4 +1,4 @@
-"""Fill a node's Markdown: settings, inputs, session values, working values and included fragments."""
+"""Fill a node's Markdown: settings, inputs, session values, working values and includes."""
 
 import posixpath
 import re
@@ -55,9 +55,9 @@ def render(
             loop = [*chain[chain.index(path):], path]
             raise TemplateError(f"{path} includes itself ({' → '.join(posixpath.basename(p) for p in loop)})")
         try:
-            fragment = resources.read(path)
+            included = resources.read(path)
         except (FileNotFoundError, ValueError) as e:
             raise TemplateError(f"cannot include `{path}` in {where}: {e}") from None
-        return expand(fragment, path, (*chain, path))
+        return expand(included, path, (*chain, path))
 
     return expand(text, file, (posixpath.normpath(file),))
