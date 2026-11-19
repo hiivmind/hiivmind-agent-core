@@ -8,11 +8,22 @@ step forms only this model reads:
     {"raise": "passes" | "will not pass" | "other"}      raises ScriptRefusal(kind), once
     {"crash": true}                                       raises SystemExit, once, whatever the process
 
-The model finds the node by the line of the brief that names it, and the step by what the conversation holds: one step
-for each answer already in it, and one for each `raise` or `crash` already played. A `crash` is remembered in a file of
-the directory, so that the process that resumes does not crash at the same step.
+The model finds the node by the line of the brief that names it. It finds its place in the script by progress that is
+scoped to ONE CONVERSATION: the conversation's key is the run config's `thread_id` (when there is one) with the id, or
+else the text, of the first message that is not a system message. The place is
+
+    (the answers in the conversation that this model produced for this node's script: they carry
+     `response_metadata["script"]`, so a hand-over's earlier answers are not counted)
+  + (the `raise` and `crash` steps already played in this conversation)
+
+and the played `raise`/`crash` steps are kept in `<dir>/<node>.<hash of the key>.progress.json`, so a rebuilt model, or
+a process that resumes, does not play a crash again and does not play a refusal again. A retry of a model call (the same
+conversation, the same place) therefore finds the next step after a `raise`. A FRESH run of an item (RTY-2) is found by
+its key: it has a new conversation (a new thread id, or a new first message), so it starts at the first step; a fresh run
+that kept the same thread id and the same first message would continue where the earlier one stopped.
 """
 
+import hashlib
 import json
 import re
 from pathlib import Path
@@ -21,7 +32,7 @@ from typing import Any, Literal
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, SystemMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
-from pydantic import PrivateAttr
+from langchain_core.runnables.config import var_child_runnable_config
 
 from agent_core.contracts.registry import register
 from agent_core.contracts.values import Usage
@@ -37,7 +48,6 @@ class ScriptRefusal(Exception):
 
 class ScriptChatModel(BaseChatModel):
     directory: Path
-    _raised: dict[str, int] = PrivateAttr(default_factory=dict)   # node -> the `raise` steps played by this model
 
     @property
     def _llm_type(self) -> str:
@@ -54,23 +64,38 @@ class ScriptChatModel(BaseChatModel):
                     return found.group(1)
         raise ValueError("no message of the conversation names the node that is running")
 
-    def _crashes(self, node: str) -> int:
-        file = self.directory / f"{node}.crashes"
+    @staticmethod
+    def _key(messages: list[BaseMessage]) -> str:
+        config = var_child_runnable_config.get() or {}
+        thread = (config.get("configurable") or {}).get("thread_id", "")
+        first = next((m for m in messages if not isinstance(m, SystemMessage)), None)
+        said = "" if first is None else (first.id or first.text)
+        return hashlib.sha1(f"{thread}\0{said}".encode()).hexdigest()[:12]
+
+    def _progress_file(self, node: str, key: str) -> Path:
+        return self.directory / f"{node}.{key}.progress.json"
+
+    def _played(self, node: str, key: str) -> int:
+        file = self._progress_file(node, key)
         return int(file.read_text()) if file.exists() else 0
 
     def _generate(self, messages: list[BaseMessage], stop=None, run_manager=None, **kwargs: Any) -> ChatResult:
         node = self._node(messages)
+        key = self._key(messages)
         steps = json.loads((self.directory / f"{node}.json").read_text())
-        answered = sum(isinstance(message, AIMessage) for message in messages)
-        position = answered + self._raised.get(node, 0) + self._crashes(node)
+        answered = sum(
+            isinstance(message, AIMessage) and message.response_metadata.get("script") == node for message in messages
+        )
+        played = self._played(node, key)
+        position = answered + played
         if position >= len(steps):
             raise RuntimeError(f"the script of node {node} has {len(steps)} steps and the model was asked for step {position + 1}")
         step = steps[position]
         if isinstance(step, dict) and "raise" in step:
-            self._raised[node] = self._raised.get(node, 0) + 1
+            self._progress_file(node, key).write_text(str(played + 1))
             raise ScriptRefusal(step["raise"])
         if isinstance(step, dict) and step.get("crash"):
-            (self.directory / f"{node}.crashes").write_text(str(self._crashes(node) + 1))
+            self._progress_file(node, key).write_text(str(played + 1))
             raise SystemExit(1)
         text, calls, usage = "", [], None
         if isinstance(step, str):
@@ -85,13 +110,13 @@ class ScriptChatModel(BaseChatModel):
                 {"name": name, "args": args, "id": f"{node}-{position + 1}-{index}", "type": "tool_call"}
                 for index, (name, args) in enumerate(calls)
             ],
+            response_metadata={"script": node},
         )
         if usage is not None:
             message.usage_metadata = {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0, **usage}
         return ChatResult(generations=[ChatGeneration(message=message)])
 
 
-@register("model_provider", "script")
 class ScriptProvider:
     name = "script"
     packages: tuple[str, ...] = ()
@@ -114,3 +139,6 @@ class ScriptProvider:
             return Usage()
         details = meta.get("input_token_details") or {}
         return Usage(meta.get("input_tokens"), details.get("cache_read"), details.get("cache_creation"))
+
+
+register("model_provider", "script")(ScriptProvider())   # an instance: `provider_module` returns it, and its methods are bound
