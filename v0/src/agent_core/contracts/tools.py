@@ -1,9 +1,0 @@
-from typing import Protocol
-
-from .values import ToolSpec
-
-
-class ToolSource(Protocol):
-    async def tools(self) -> tuple[ToolSpec, ...]: ...
-    async def call(self, name: str, args: dict, state: dict) -> object: ...
-    async def close(self) -> None: ...

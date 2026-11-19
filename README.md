@@ -2,7 +2,9 @@
 
 A small Python harness that runs model-driven procedures, called nodes, and walks them as sequences. `agent_core.open(instance)` returns one runtime object; `agent-core job` is a client of it. The core imports no agent framework: each framework sits behind a backend, which is a provider the core is handed by name.
 
-The old tree (v0) is under `v0/` and at the tag `v0-final`; it is not packaged or tested here.
+The old tree (v0) is kept at the tag `v0-final`; it is not in this tree.
+
+Design documents (hiivmind-central, 2026-11-18): [architecture](https://github.com/hiivmind/hiivmind-central/blob/main/04.planning/hiivmind-agent-core/superpowers/specs/2026-11-18-agent-core-architecture.md), [requirements](https://github.com/hiivmind/hiivmind-central/blob/main/04.planning/hiivmind-agent-core/superpowers/specs/2026-11-18-agent-core-requirements.md), [layered facade design](https://github.com/hiivmind/hiivmind-central/blob/main/04.planning/hiivmind-agent-core/superpowers/specs/2026-11-18-agent-core-layered-facade-design.md).
 
 ## Layers
 
