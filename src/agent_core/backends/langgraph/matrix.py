@@ -9,7 +9,6 @@ from agent_core.contracts.matrix import Entry, Feature, Matrix
 
 _TASK = {
     Feature.F1: 2, Feature.F2: 2, Feature.F18: 2, Feature.F21: 2,
-    Feature.F8: 4, Feature.F9: 4, Feature.F11: 4,
     Feature.F12: 5, Feature.F13: 5, Feature.F20: 5,
     Feature.F3: 6,
     Feature.F24: 7,
@@ -26,6 +25,11 @@ _FIXED = {
     Feature.F19: "deferred: no consumer in this delivery",
 }
 
+_HELPER = {
+    Feature.F8: "a synchronous person inside the call; `interrupt` is not used in a job",
+    Feature.F9: "the `none` strategy; calls handed over as calls (`_render`)",
+    Feature.F11: "the `exit` tool, core policy: LangChain's structured output has the wrong shape for a union of exits, retries without a budget and validates before recorded outputs merge (architecture §4.4)",
+}
 _NATIVE = {
     Feature.F1: "`create_agent`",
     Feature.F2: "`ToolNode` runs the tools after `after_model` reviews the response",
@@ -38,6 +42,7 @@ _NATIVE = {
 
 FEATURES: Matrix = {
     feature: Entry("native", _NATIVE[feature]) if feature in _NATIVE
+    else Entry("helper", _HELPER[feature]) if feature in _HELPER
     else Entry("not built", _FIXED[feature] if feature in _FIXED else f"Plan 2, task {_TASK[feature]}")
     for feature in Feature
 }

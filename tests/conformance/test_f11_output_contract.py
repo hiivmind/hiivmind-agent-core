@@ -2,7 +2,7 @@
 
 import pytest
 
-from agent_core.contracts.events import ToolReturned
+from agent_core.contracts.events import ModelRequested, ToolReturned
 
 GOOD = [["exit", {"outcome": "done", "outputs": {"revision": "r1"}}]]
 NO_OUTPUT = [["exit", {"outcome": "done", "outputs": {}}]]
@@ -59,3 +59,11 @@ async def test_an_exit_other_than_done_needs_no_outputs_and_may_give_a_reason(ha
     h = harness({"lookup": [[["exit", {"outcome": "failed", "outputs": {"reason": "not found"}}]]]})
     outcome = await h.nodes.run("lookup", {"name": "alpha"})
     assert (outcome.exit, outcome.outputs) == ("failed", {"reason": "not found"})
+
+
+@pytest.mark.feature("F11")
+async def test_a_second_bad_exit_ends_invalid_output_without_a_third_model_call(harness):   # JOB-7b
+    h = harness({"lookup": [NO_OUTPUT, NO_OUTPUT, GOOD]})
+    outcome = await h.nodes.run("lookup", {"name": "alpha"})
+    assert (outcome.exit, outcome.reason) == ("failed", "invalid_output")
+    assert len([e for e in h.events.record() if isinstance(e, ModelRequested)]) == 2
