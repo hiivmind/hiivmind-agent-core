@@ -14,7 +14,7 @@ import sys
 from pathlib import Path
 
 import pytest
-import script_model  # noqa: F401  (registers the `script` model provider)
+from script_model import ScriptProvider  # registers the `script` model provider
 from audit import DESELECTED, all_matrices, record
 
 import agent_core
@@ -64,13 +64,19 @@ def delivered(backend_name, tmp_path, monkeypatch):
 
 
 @pytest.fixture
-async def harness(backend_name, delivered, tmp_path):
-    """`harness(scripts, **options)`: a harness on the conformance instance. `options` are those of `agent_core.open`;
-    `runs` defaults to a directory of the test's own."""
+async def harness(backend_name, delivered, tmp_path, monkeypatch):
+    """`harness(scripts, provider=None, **options)`: a harness on the conformance instance. `options` are those of
+    `agent_core.open`; `runs` defaults to a directory of the test's own. `provider`, for the LangGraph backend, is the
+    model setting in place of `script:<directory>` (`"naming:big-model-7"`): a provider of the test's own then plays the
+    scripts, and finds their directory in `ScriptProvider.directory`."""
     opened = []
 
-    def make(scripts: dict[str, list], **options):
-        delivered(scripts)
+    def make(scripts: dict[str, list], provider: str | None = None, **options):
+        environment = delivered(scripts)
+        if provider is not None:
+            directory = environment["AGENT_CORE_LANGGRAPH_MODEL"].partition(":")[2]
+            monkeypatch.setenv("AGENT_CORE_LANGGRAPH_MODEL", provider)
+            monkeypatch.setattr(ScriptProvider, "directory", directory, raising=False)
         options = {"backend": backend_name, "runs": tmp_path / "runs", **options}
         opened.append(agent_core.open(INSTANCE / "instance.yaml", **options))
         return opened[-1]

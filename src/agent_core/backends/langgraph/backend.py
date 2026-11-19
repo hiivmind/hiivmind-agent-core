@@ -6,6 +6,7 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from langchain.agents import create_agent
+from langchain.agents.middleware import ModelRetryMiddleware
 from langchain_core.messages import AIMessage, HumanMessage
 
 from agent_core.backends.langgraph.hook import PolicyHook, text_of
@@ -13,6 +14,7 @@ from agent_core.backends.langgraph.matrix import FEATURES
 from agent_core.backends.langgraph.providers import provider_module
 from agent_core.backends.langgraph.settings import LangGraphSettings
 from agent_core.backends.langgraph.tools import _render, sdk_tools
+from agent_core.contracts.errors import ProviderRefused, ProviderUnavailable
 from agent_core.contracts.matrix import Matrix
 from agent_core.contracts.registry import register_backend
 from agent_core.contracts.unit import Unit, UnitResult
@@ -42,17 +44,41 @@ class LangGraphBackend:
             module.chat_model(name, self._settings),
             tools=sdk_tools(policy, unit.tools),
             system_prompt=policy.instructions,
-            # Task 5 puts the retry middleware (`ModelRetryMiddleware`, the one retry owner) before the hook.
-            middleware=[*module.cache_middleware(), PolicyHook(policy, module, unit.events)],
+            # The hook reports each model call once; the retry owner is inside it, so a retried call is not reported again.
+            middleware=[*module.cache_middleware(), PolicyHook(policy, module, unit.events), self._retries()],
         )
         messages = _render(policy.handover)
         if policy.opening:   # a run started again ends its hand-over with a call and its result: no opening then
             messages.append(HumanMessage(policy.opening))
         config = {"recursion_limit": self._settings.RECURSION_LIMIT, "configurable": {"thread_id": unit.thread}}
-        state = await agent.ainvoke({"messages": messages, "node": policy.initial()}, config=config)
+        try:
+            state = await agent.ainvoke({"messages": messages, "node": policy.initial()}, config=config)
+        except Exception as e:
+            mapped = self._mapped(e)
+            if mapped is e:
+                raise
+            raise mapped from e
         last = state["messages"][-1]
         said = text_of(last) if isinstance(last, AIMessage) and not last.tool_calls else ""
         return policy.finish(state["node"], said)
+
+    def _retries(self) -> ModelRetryMiddleware:
+        """The one retry owner (MOD-6): the client's own retries are off. What it gives up on is raised as it was."""
+        module = self._provider
+        return ModelRetryMiddleware(
+            max_retries=self._settings.MAX_RETRIES, retry_on=lambda e: module.classify(e) == "passes", on_failure="error",
+        )
+
+    def _mapped(self, error: Exception) -> Exception:
+        """What the retry middleware raised, as the core reads it: a refusal that passes (RTY-2a) or one that will not
+        (MOD-4); any other error is its own."""
+        match self._provider.classify(error):
+            case "passes":
+                return ProviderUnavailable(f"{type(error).__name__}: {error}")
+            case "will not pass":
+                return ProviderRefused(self._provider.refusal(error))
+            case _:
+                return error
 
     async def run_fragment(self, unit: Unit) -> UnitResult:
         raise NotImplementedError("task 9")
