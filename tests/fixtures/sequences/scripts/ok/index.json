@@ -1,0 +1,16 @@
+[
+ [
+  [
+   "exit",
+   {
+    "outcome": "done",
+    "outputs": {
+     "entries": [
+      "e1",
+      "e2"
+     ]
+    }
+   }
+  ]
+ ]
+]

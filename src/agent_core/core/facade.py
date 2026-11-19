@@ -276,9 +276,9 @@ class _Sequences:
     async def resume(self, run_id: str) -> SequenceResult:
         return await self._h.sequence(run_id, lambda macro: macro.resume(run_id))
 
-    async def rerun(self, run_id: str, from_step: int) -> SequenceResult:
+    async def rerun(self, run_id: str, from_step: int, *, new_run_id: str | None = None) -> SequenceResult:
         match = RUN_ID.fullmatch(run_id)
-        new = _new_run_id(match.group(1) if match else run_id)
+        new = new_run_id or _new_run_id(match.group(1) if match else run_id)
         return await self._h.sequence(new, lambda macro: macro.rerun(new, run_id, from_step))
 
 
