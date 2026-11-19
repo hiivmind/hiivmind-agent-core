@@ -11,6 +11,11 @@ def known_name(name: str) -> bool:
     return name in REVISIONS
 
 
+def all_names() -> list:
+    """The names the register holds, in order."""
+    return ["alpha", "beta"]
+
+
 def lookup_revision(state, name: str | None = None) -> dict:
     """Look up the revision of a name in the register; by default the name this node was given."""
     name = state["name"] if name is None else name

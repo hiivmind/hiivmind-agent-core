@@ -31,7 +31,31 @@ fragments:
     transitions:
       lookup: {done: count, failed: count}
       count: {done: end, failed: end}
+  tally:
+    inputs: [names]
+    outputs: [totals, totals_failures]
+    exits: [done, failed]
+    start: {fan_out: count, over: names, as: revisions, into: totals, max_concurrency: 2}
+    transitions:
+      count: {done: end, failed: end}
+  roster:
+    inputs: []
+    outputs: [revisions, revisions_failures]
+    exits: [done, failed]
+    start: {fan_out: lookup, over: {tool: all_names}, as: name, into: revisions}
+    transitions:
+      lookup: {done: end, failed: end}
 sequences:
+  tallies:
+    description: Count each name with the tally fragment, two at a time.
+    start: tally
+    transitions:
+      tally: {done: end, failed: end}
+  rosters:
+    description: Look up the names the register lists, with the roster fragment.
+    start: roster
+    transitions:
+      roster: {done: end, failed: end}
   tolerates:
     description: Run the tolerant fragment on a name.
     start: tolerant

@@ -66,7 +66,7 @@ async def test_ask_waits_for_the_person_inside_the_call(harness, backend_name, m
         from agent_core.backends.langgraph import backend as module
 
         real = module.create_agent
-        monkeypatch.setattr(module, "create_agent", lambda *a, **k: real(*a, checkpointer=saver, **k))
+        monkeypatch.setattr(module, "create_agent", lambda *a, **k: real(*a, **{**k, "checkpointer": saver}))
     person = Slow("green")
     h = harness({"ask": [ASK, EXIT]}, person=person)
     started = time.monotonic()

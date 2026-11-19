@@ -1,16 +1,11 @@
 """The wiring matrix of the LangGraph backend: one entry per feature, each naming its means.
 
-Each task of the build turns the entries it carries out to `native` or `helper`; the rest are `not built` with the
-task that will build them. F6, F17, F22 and F23 stand at the values they have for every backend; F10, F14 and F19 are
-deferred.
+Each entry is `native` or `helper`, naming its means. F6, F17, F22 and F23 stand at the values they have for every
+backend; F10, F14 and F19 are deferred.
 """
 
 from agent_core.contracts.matrix import Entry, Feature, Matrix
 
-_TASK = {
-    Feature.F1: 2, Feature.F2: 2, Feature.F18: 2, Feature.F21: 2,
-    Feature.F7: 9, Feature.F16: 9,
-}
 _FIXED = {
     Feature.F6: "sessions, step 7",
     Feature.F17: "sessions, step 7",
@@ -39,11 +34,13 @@ _NATIVE = {
     Feature.F15: "LangChain callbacks and hooks, mapped to events; LangSmith by its own environment variables",
     Feature.F24: "`recursion_limit`",
     Feature.F21: "the core builds the brief; the backend passes it as `system_prompt`",
+    Feature.F7: "`AsyncSqliteSaver` in the run directory: a unit in flight resumes from its checkpoint, invoked with no input",
+    Feature.F16: "`StateGraph`, `Send`: a fragment compiles to a graph, its fan-out is `Send` to a worker node",
 }
 
 FEATURES: Matrix = {
     feature: Entry("native", _NATIVE[feature]) if feature in _NATIVE
     else Entry("helper", _HELPER[feature]) if feature in _HELPER
-    else Entry("not built", _FIXED[feature] if feature in _FIXED else f"Plan 2, task {_TASK[feature]}")
+    else Entry("not built", _FIXED[feature])
     for feature in Feature
 }

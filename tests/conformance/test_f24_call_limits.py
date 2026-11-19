@@ -22,7 +22,7 @@ async def test_the_recursion_limit_ends_a_looping_node(harness, monkeypatch):
     assert counts(h) == (1, 2, 1)   # six steps reach the second model request; one run, never repeated
 
 
-@pytest.mark.feature("F24", "F16")   # runs once the backend builds fragments (Plan 2, task 9); skipped until then
+@pytest.mark.feature("F24", "F16")   # a fan-out is a fragment's
 async def test_a_looping_fan_out_item_fails_with_the_limit_and_is_not_run_again(harness, monkeypatch):
     monkeypatch.setenv("AGENT_CORE_LANGGRAPH_RECURSION_LIMIT", "6")
     h = harness({"lookup": [LOOKUP] * 20})

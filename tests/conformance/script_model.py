@@ -6,6 +6,7 @@ step forms only this model reads:
 
     {"calls": [...], "text": "...", "usage": {"input_tokens": n, "input_token_details": {...}}}
     {"raise": "passes" | "will not pass" | "other"}      raises ScriptRefusal(kind), once
+    {"raise": ..., "once": true}                          the same, in the first conversation of the node that reaches it
     {"crash": true}                                       raises SystemExit, once, whatever the process
 
 The model finds the node by the line of the brief that names it. It finds its place in the script by progress that is
@@ -105,6 +106,15 @@ class ScriptChatModel(BaseChatModel):
         played = self._played(node, key)
         position = answered + played
         step = steps[position] if position < len(steps) else ""   # a script that runs out is the model stopping with nothing said
+        while isinstance(step, dict) and step.get("once"):   # a refusal a conversation of the node has played before is passed over
+            marker = self.directory / f"{node}.{position}.once"
+            if not marker.exists():
+                marker.write_text("")
+                break
+            self._progress_file(node, key).write_text(str(played + 1))
+            played += 1
+            position += 1
+            step = steps[position] if position < len(steps) else ""
         if isinstance(step, dict) and "raise" in step:
             self._progress_file(node, key).write_text(str(played + 1))
             raise ScriptRefusal(step["raise"])

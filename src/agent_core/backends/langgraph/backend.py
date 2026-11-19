@@ -1,14 +1,19 @@
 """The LangGraph backend. A fresh agent is built for each unit, so a run's state lives in graph state and its checkpoint,
 never on the backend (KIT-1)."""
 
+import asyncio
+import dataclasses
 import os
 from collections.abc import Mapping
+from contextlib import AsyncExitStack
 from pathlib import Path
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelRetryMiddleware
 from langchain_core.messages import AIMessage, HumanMessage
+from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
+from agent_core.backends.langgraph.fragments import compile_fragment, fragment_result, initial_state
 from agent_core.backends.langgraph.hook import PolicyHook, text_of
 from agent_core.backends.langgraph.matrix import FEATURES
 from agent_core.backends.langgraph.mcp import AdapterServers
@@ -18,7 +23,7 @@ from agent_core.backends.langgraph.tools import _render, sdk_tools
 from agent_core.contracts.errors import ProviderRefused, ProviderUnavailable
 from agent_core.contracts.matrix import Matrix
 from agent_core.contracts.registry import register_backend
-from agent_core.contracts.unit import Unit, UnitResult
+from agent_core.contracts.unit import Intent, Unit, UnitResult
 
 
 @register_backend("langgraph", settings=LangGraphSettings)
@@ -28,6 +33,9 @@ class LangGraphBackend:
     def __init__(self, settings: LangGraphSettings):
         self._settings = settings
         self._provider, self._model = provider_module(settings.MODEL)   # a run that cannot start is found now (MOD-3)
+        self._savers: dict[Path, AsyncSqliteSaver] = {}   # one checkpointer for each run directory, opened when first used
+        self._open = AsyncExitStack()
+        self._opening = asyncio.Lock()
 
     def features(self) -> Matrix:
         return self.FEATURES
@@ -35,7 +43,32 @@ class LangGraphBackend:
     def servers(self, declared: Mapping[str, dict], root: Path) -> AdapterServers:
         return AdapterServers(declared, dict(os.environ), root)   # the environment as it is now: the facade has just set it
 
+    async def _saver(self, run_dir: Path | None) -> AsyncSqliteSaver | None:
+        """The checkpointer of a run directory, `checkpoints.sqlite` in it; none for a unit that has no run directory."""
+        if run_dir is None:
+            return None
+        async with self._opening:
+            if run_dir not in self._savers:
+                run_dir.mkdir(parents=True, exist_ok=True)
+                self._savers[run_dir] = await self._open.enter_async_context(
+                    AsyncSqliteSaver.from_conn_string(str(run_dir / "checkpoints.sqlite"))
+                )
+            return self._savers[run_dir]
+
+    @staticmethod
+    async def _input(graph, config: dict, payload: dict, intent: Intent, saver: AsyncSqliteSaver | None) -> dict | None:
+        """What the unit's graph is invoked with (ORC-6, §4.4a). `start` and `fresh` give the input. `continue` gives none
+        when the thread has a checkpoint, and the graph resumes from it; with no checkpoint it starts the unit."""
+        if intent == "continue" and saver is not None and (await graph.aget_state(config)).created_at is not None:
+            return None
+        return payload
+
     async def run_node(self, unit: Unit) -> UnitResult:
+        return await self._run_node(unit, await self._saver(unit.run_dir), {"thread_id": unit.thread})
+
+    async def _run_node(self, unit: Unit, checkpointer: AsyncSqliteSaver | bool | None, configurable: dict) -> UnitResult:
+        """One node run. `checkpointer` is the run directory's, for a unit of its own; `None`, to checkpoint under the
+        graph this call runs inside, as a node of a fragment does; `False`, for no checkpoint at all."""
         policy = await unit.start(unit.name, unit.inputs)
         if isinstance(policy, UnitResult):   # the node did not start
             return policy
@@ -46,13 +79,16 @@ class LangGraphBackend:
             system_prompt=policy.instructions,
             # The retry owner is outside the hook: each attempt sent is a request the hook reports (CTX-6, Q4).
             middleware=[*module.cache_middleware(), self._retries(), PolicyHook(policy, module, unit.events)],
+            checkpointer=checkpointer,
         )
         messages = _render(policy.handover)
         if policy.opening:   # a run started again ends its hand-over with a call and its result: no opening then
             messages.append(HumanMessage(policy.opening))
-        config = {"recursion_limit": self._settings.RECURSION_LIMIT, "configurable": {"thread_id": unit.thread}}
+        config = {"recursion_limit": self._settings.RECURSION_LIMIT, "configurable": configurable}
+        saver = checkpointer if isinstance(checkpointer, AsyncSqliteSaver) else None
         try:
-            state = await agent.ainvoke({"messages": messages, "node": policy.initial()}, config=config)
+            payload = await self._input(agent, config, {"messages": messages, "node": policy.initial()}, unit.intent, saver)
+            state = await agent.ainvoke(payload, config=config, **({"durability": "sync"} if saver else {}))
         except Exception as e:
             mapped = self._mapped(e)
             if mapped is e:
@@ -61,7 +97,6 @@ class LangGraphBackend:
         last = state["messages"][-1]
         said = text_of(last) if isinstance(last, AIMessage) and not last.tool_calls else ""
         return policy.finish(state["node"], said)
-
     def _retries(self) -> ModelRetryMiddleware:
         """The one retry owner (MOD-6): the client's own retries are off. What it gives up on is raised as it was."""
         module = self._provider
@@ -81,7 +116,20 @@ class LangGraphBackend:
                 return error
 
     async def run_fragment(self, unit: Unit) -> UnitResult:
-        raise NotImplementedError("task 9")
+        saver = await self._saver(unit.run_dir)
+
+        async def run(node: str, inputs: Mapping, intent: Intent, thread: str) -> UnitResult:
+            each = dataclasses.replace(unit, name=node, inputs=inputs, intent=intent, thread=thread, fragment=None)
+            if intent == "fresh":   # a second run is no continuation of the first one's checkpoint (RTY-2)
+                return await self._run_node(each, False, {"thread_id": thread})
+            return await self._run_node(each, None, {})   # inside the fragment's graph, under the fragment's thread
+
+        graph = compile_fragment(unit.fragment, unit, run, saver)
+        config = {"recursion_limit": self._settings.RECURSION_LIMIT, "configurable": {"thread_id": unit.thread}}
+        payload = await self._input(graph, config, initial_state(unit.fragment, unit.inputs), unit.intent, saver)
+        state = await graph.ainvoke(payload, config=config, **({"durability": "sync"} if saver else {}))
+        return fragment_result(unit.fragment, state)
 
     async def close(self) -> None:
-        pass
+        self._savers.clear()
+        await self._open.aclose()

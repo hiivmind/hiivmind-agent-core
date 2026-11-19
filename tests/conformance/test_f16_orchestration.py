@@ -7,7 +7,7 @@ ends it.
 
 import pytest
 
-from agent_core.contracts.events import NodeStarted, ToolReturned
+from agent_core.contracts.events import ModelRequested, NodeEnded, NodeStarted, ToolReturned
 
 LOOKUP = [[["lookup_revision", {}]], [["exit", {"outcome": "done", "outputs": {}}]]]
 COUNT = [[["exit", {"outcome": "done", "outputs": {"total": 7}}]]]
@@ -141,3 +141,40 @@ async def test_a_nodes_own_failure_reason_stays_in_its_outputs_when_the_fragment
     [inner] = [f for f in result.record.failures if f["node"] == "tolerant/lookup"]
     assert inner == {"node": "tolerant/lookup", "outcome": "failed", "outputs": own}   # no harness `reason`
     assert result.steps[0]["steps"][0] == {"name": "lookup", "outcome": "failed", "outputs": own}
+
+
+@pytest.mark.feature("F16")
+async def test_a_fan_outs_concurrency_limit_is_honoured_inside_a_fragment(harness):   # FAN-1
+    slow = [[["shell__run", {"command": "sleep 0.3"}]], COUNT[0]]
+    h = harness({"count": slow})
+    result = await h.sequences.run("tallies", {"names": ["a", "b", "c", "d", "e"]})
+    assert result.end == "done" and len(result.facts["totals"]) == 5
+    running, peak = 0, 0
+    for event in h.events.record():
+        if isinstance(event, NodeStarted | NodeEnded):
+            running += 1 if isinstance(event, NodeStarted) else -1
+            peak = max(peak, running)
+    assert peak == 2   # `max_concurrency: 2` of the fragment's fan-out: two at once, never more
+
+
+@pytest.mark.feature("F16")
+async def test_a_list_computed_by_a_tool_is_a_step_of_the_fragment(harness):   # FAN-5
+    h = harness(SCRIPTS)
+    result = await h.sequences.run("rosters", {})
+    assert result.end == "done"
+    assert result.facts["revisions"] == [{"revision": "r1"}, {"revision": "r2"}]
+    [step] = result.steps
+    assert [s["name"] for s in step["steps"]] == ["lookup[list]", "lookup[1]", "lookup[2]", "lookup"]
+
+
+@pytest.mark.feature("F16", "F12")   # a refusal needs a model: skipped where F12 is not built
+async def test_an_item_the_provider_refused_is_run_once_more_from_a_fresh_context_inside_a_fragment(harness, monkeypatch):   # RTY-2, RTY-3
+    monkeypatch.setenv("AGENT_CORE_LANGGRAPH_MAX_RETRIES", "0")   # the refusal reaches the fan-out at once
+    monkeypatch.setattr("agent_core.backends.langgraph.fragments.RETRY_PAUSE", 0)
+    refused_once = [[["lookup_revision", {}]], {"raise": "passes", "once": True}, [["exit", {"outcome": "done", "outputs": {}}]]]
+    h = harness({"lookup": refused_once, "count": COUNT})
+    result = await h.sequences.run("pairs", {"names": ["alpha"]})
+    assert (result.end, result.facts["revisions"], result.facts["revisions_failures"]) == ("done", [{"revision": "r1"}], [])
+    sent = [e for e in h.events.record() if isinstance(e, ModelRequested)]
+    lengths = [len(next(p for p in e.parts if p.kind == "conversation").messages) for e in sent[:4]]
+    assert lengths == [1, 2, 1, 2]   # the second run starts again from the opening, and does not carry the first run's call

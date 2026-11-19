@@ -8,4 +8,5 @@ servers:
 tools:
   lookup_revision: revisions:lookup_revision
   known_name: revisions:known_name
+  all_names: revisions:all_names
   crash_once: revisions:crash_once
