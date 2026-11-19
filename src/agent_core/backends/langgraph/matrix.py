@@ -9,7 +9,6 @@ from agent_core.contracts.matrix import Entry, Feature, Matrix
 
 _TASK = {
     Feature.F1: 2, Feature.F2: 2, Feature.F18: 2, Feature.F21: 2,
-    Feature.F3: 6,
     Feature.F24: 7,
     Feature.F15: 8,
     Feature.F7: 9, Feature.F16: 9,
@@ -33,6 +32,7 @@ _NATIVE = {
     Feature.F1: "`create_agent`",
     Feature.F2: "`ToolNode` runs the tools after `after_model` reviews the response",
     Feature.F18: "the offered tools; `after_model` and `wrap_tool_call`",
+    Feature.F3: "`langchain-mcp-adapters`: one `MultiServerMCPClient` session per server for a run, its tools loaded over it by `load_mcp_tools`; every call goes through core policy to that session",
     Feature.F4: "`BaseTool`, body core policy; LangChain injects `ToolRuntime` into the coroutine of a tool with a dict `args_schema`, so the spec's own schema is the one the model sees",
     Feature.F5: "the `node` graph-state channel; `ToolNode` applies the tools' `Command` updates when the step ends",
     Feature.F12: "`ModelRetryMiddleware` with the provider's classifier; client retries off",

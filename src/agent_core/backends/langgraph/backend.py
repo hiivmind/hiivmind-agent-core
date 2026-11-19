@@ -11,6 +11,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 
 from agent_core.backends.langgraph.hook import PolicyHook, text_of
 from agent_core.backends.langgraph.matrix import FEATURES
+from agent_core.backends.langgraph.mcp import AdapterServers
 from agent_core.backends.langgraph.providers import provider_module
 from agent_core.backends.langgraph.settings import LangGraphSettings
 from agent_core.backends.langgraph.tools import _render, sdk_tools
@@ -18,7 +19,6 @@ from agent_core.contracts.errors import ProviderRefused, ProviderUnavailable
 from agent_core.contracts.matrix import Matrix
 from agent_core.contracts.registry import register_backend
 from agent_core.contracts.unit import Unit, UnitResult
-from agent_core.helpers.mcp import McpServers
 
 
 @register_backend("langgraph", settings=LangGraphSettings)
@@ -32,8 +32,8 @@ class LangGraphBackend:
     def features(self) -> Matrix:
         return self.FEATURES
 
-    def servers(self, declared: Mapping[str, dict], root: Path) -> McpServers:
-        return McpServers(declared, dict(os.environ), root)   # the environment as it is now: the facade has just set it
+    def servers(self, declared: Mapping[str, dict], root: Path) -> AdapterServers:
+        return AdapterServers(declared, dict(os.environ), root)   # the environment as it is now: the facade has just set it
 
     async def run_node(self, unit: Unit) -> UnitResult:
         policy = await unit.start(unit.name, unit.inputs)

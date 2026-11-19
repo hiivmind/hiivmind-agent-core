@@ -118,16 +118,22 @@ class McpServers:
             connection.ready.exception()  # retrieved: the caller that was waiting for it may have gone
 
     def _why(self, server: str, e: BaseException) -> str:
-        spec = self._declared[server]
-        if "url" in spec:
-            return f'tool server "{server}" could not be reached at {spec["url"]}'
-        leaves, queue = [], [e]
-        while queue:
-            x = queue.pop()
-            if hasattr(x, "exceptions"):
-                queue.extend(x.exceptions)
-            else:
-                leaves.append(x)
-        if any(isinstance(x, FileNotFoundError) for x in leaves):
-            return f'tool server "{server}" could not be started: no such command "{spec["command"]}"'
-        return f'tool server "{server}" could not be started: it closed the connection before answering'
+        return why_not_connected(server, self._declared[server], e)
+
+
+def why_not_connected(server: str, spec: Mapping, error: BaseException) -> str:
+    """What to tell of a server that could not be started or reached (TOOL-11c): the text of the run that cannot start.
+    `error` is what ended the attempt, an exception group included. Both ways of reaching a server (this helper and a
+    backend's own) say it in these words."""
+    if "url" in spec:
+        return f'tool server "{server}" could not be reached at {spec["url"]}'
+    leaves, queue = [], [error]
+    while queue:
+        x = queue.pop()
+        if hasattr(x, "exceptions"):
+            queue.extend(x.exceptions)
+        else:
+            leaves.append(x)
+    if any(isinstance(x, FileNotFoundError) for x in leaves):
+        return f'tool server "{server}" could not be started: no such command "{spec["command"]}"'
+    return f'tool server "{server}" could not be started: it closed the connection before answering'
