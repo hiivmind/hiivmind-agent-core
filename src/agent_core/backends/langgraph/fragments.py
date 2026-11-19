@@ -24,6 +24,7 @@ from agent_core.contracts.walk import RETRY_PAUSE
 from agent_core.helpers.walk import SequenceError
 
 NodeRunner = Callable[[str, Mapping, Intent, str], Awaitable[UnitResult]]   # (node, inputs, intent, thread) -> its result
+Begun = Callable[[str], Awaitable[bool]]   # whether a thread has a checkpoint
 
 
 def _merge(current: dict | None, update: dict) -> dict:
@@ -97,8 +98,8 @@ class _Gate:
 
 
 class _Compiler:
-    def __init__(self, fragment: FragmentDef, unit: Unit, run: NodeRunner):
-        self.fragment, self.unit, self.run = fragment, unit, run
+    def __init__(self, fragment: FragmentDef, unit: Unit, run: NodeRunner, begun: Begun):
+        self.fragment, self.unit, self.run, self.begun = fragment, unit, run, begun
         self.rows = fragment.transitions
         self.graph = StateGraph(FragmentState)
         self.added: set[str] = set()
@@ -208,18 +209,26 @@ class _Compiler:
 
     async def _attempt(self, node: str, inputs: Mapping, base: str) -> UnitResult:
         """One item's run. A run that raises is a failed item. A run the provider found unavailable is run once more,
-        fresh, after `RETRY_PAUSE` seconds (RTY-2, RTY-3); one the provider refused for good is not (MOD-4, MOD-5)."""
+        fresh, after `RETRY_PAUSE` seconds (RTY-2, RTY-3); one the provider refused for good is not (MOD-4, MOD-5).
+
+        The second run is on its own thread. A second run that has a checkpoint was in flight when the process died: it is
+        continued, and the first run is not entered again (§4.4a)."""
+        second = f"{base}/2"
+        if await self.begun(second):
+            intent = "continue"
+        else:
+            try:
+                return await self.run(node, inputs, "start", f"{base}/1")
+            except ProviderRefused as e:
+                return UnitResult("failed", {"reason": str(e)})
+            except ProviderUnavailable:
+                pass
+            except Exception as e:
+                return UnitResult("failed", {"reason": f"{type(e).__name__}: {e}"})
+            await asyncio.sleep(RETRY_PAUSE)
+            intent = "fresh"
         try:
-            return await self.run(node, inputs, "start", f"{base}/1")
-        except ProviderRefused as e:
-            return UnitResult("failed", {"reason": str(e)})
-        except ProviderUnavailable:
-            pass
-        except Exception as e:
-            return UnitResult("failed", {"reason": f"{type(e).__name__}: {e}"})
-        await asyncio.sleep(RETRY_PAUSE)
-        try:
-            return await self.run(node, inputs, "fresh", f"{base}/2")
+            return await self.run(node, inputs, intent, second)
         except ProviderRefused as e:
             return UnitResult("failed", {"reason": f"{e} (run twice)"})   # RTY-5: any error of the second run
         except Exception as e:
@@ -286,8 +295,9 @@ class _Compiler:
 
 
 def compile_fragment(
-    fragment: FragmentDef, unit: Unit, node_runner: NodeRunner, checkpointer: BaseCheckpointSaver | None = None
+    fragment: FragmentDef, unit: Unit, node_runner: NodeRunner, begun: Begun, checkpointer: BaseCheckpointSaver | None = None
 ) -> CompiledStateGraph:
     """The fragment as a graph. `node_runner(node, inputs, intent, thread)` runs one node of it as a unit; a run it
-    raises `ProviderUnavailable` for is run once more, with intent `fresh` (RTY-2)."""
-    return _Compiler(fragment, unit, node_runner).compile(checkpointer)
+    raises `ProviderUnavailable` for is run once more, with intent `fresh` and a thread of its own (RTY-2); `begun(thread)`
+    says whether that thread already has a checkpoint, and then the run is continued (`continue`)."""
+    return _Compiler(fragment, unit, node_runner, begun).compile(checkpointer)
