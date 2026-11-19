@@ -99,6 +99,15 @@ class DbosJournal:
             )
         return await handle.get_result()
 
+    async def sequence(self, run_id: str) -> str | None:
+        if not self._launched:
+            return None
+        found = await DBOS.list_workflows_async(workflow_ids=[run_id])
+        if not found:
+            return None
+        args = found[0].input["args"]   # the workflow's own arguments: (sequence name, facts)
+        return args[0] if args else None
+
     async def close(self) -> None:
         if self._launched:
             DBOS.destroy()

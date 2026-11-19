@@ -713,3 +713,12 @@ async def test_the_record_names_the_sequence_run_fresh_resumed_and_rerun(toy, op
     resumed = await harness.sequences.resume("mine")
     again = await harness.sequences.rerun("mine", 2, new_run_id="other")
     assert [r.record.sequence for r in (first, resumed, again)] == ["chain", "chain", "chain"]
+
+
+async def test_a_resume_of_a_run_that_raised_still_names_its_sequence(toy, open_harness):   # JOB-9a, RESUME-2
+    toy(raises={"migrate": RuntimeError("boom")})
+    harness = open_harness(SEQUENCES)
+    first = await harness.sequences.run("chain", {"scan_results": [["e1"]]}, run_id="mine")
+    assert (first.end, first.record.sequence) == ("failed", "chain")
+    again = await harness.sequences.resume("mine")   # DBOS does not re-enter a workflow that ended in error
+    assert again.record.sequence == "chain"

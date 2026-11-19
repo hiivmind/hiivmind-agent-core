@@ -29,7 +29,7 @@ class UnitResult:
     outputs: dict
     reason: str | None = None
     detail: dict = field(default_factory=dict)
-    steps: tuple[dict, ...] = ()   # a fragment's inner trail, [{"name", "outcome"[, "reason"][, "detail"]}] in the order they ended
+    steps: tuple[dict, ...] = ()   # a fragment's inner trail, [{"name", "outcome"[, "outputs" of a failed step][, "reason"][, "detail"]}] in the order they ended
 
 
 class NodeStart(Protocol):

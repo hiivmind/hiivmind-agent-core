@@ -205,9 +205,10 @@ def _inner(entry: dict, result: UnitResult | None) -> dict:
     result when it has them, so that a failure inside the fragment is not lost at its boundary (JOB-9a, JOB-13)."""
     kept = {"name": entry["name"], "outcome": entry["outcome"]}
     if result is not None:
-        reason = result.reason or (result.outputs.get("reason") if result.exit == "failed" else None)   # `_failed` keeps it there
-        if reason:
-            kept["reason"] = reason
+        if result.exit == "failed" and result.outputs:
+            kept["outputs"] = dict(result.outputs)   # the node's own, its own `reason` among them (JOB-13)
+        if result.reason:   # the harness's reason, not the node's
+            kept["reason"] = result.reason
         if result.detail:
             kept["detail"] = dict(result.detail)
     return kept

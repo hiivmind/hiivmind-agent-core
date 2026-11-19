@@ -129,3 +129,15 @@ async def test_a_failure_inside_a_fragment_keeps_its_reason_and_message_in_the_r
     assert inner["reason"] == "precondition_unmet" and inner["message"] == "The register does not hold nope."
     assert [s["name"] for s in result.steps[0]["steps"]] == ["lookup"]
     assert result.steps[0]["steps"][0]["reason"] == "precondition_unmet"
+
+
+@pytest.mark.feature("F16")
+async def test_a_nodes_own_failure_reason_stays_in_its_outputs_when_the_fragment_goes_on(harness):   # JOB-9a, JOB-13
+    own = {"reason": "not found", "revision": "none"}
+    result = await harness({
+        "lookup": [[["exit", {"outcome": "failed", "outputs": own}]]], "count": COUNT,
+    }).sequences.run("tolerates", {"name": "alpha"})
+    assert result.end == "done"   # the fragment recovered
+    [inner] = [f for f in result.record.failures if f["node"] == "tolerant/lookup"]
+    assert inner == {"node": "tolerant/lookup", "outcome": "failed", "outputs": own}   # no harness `reason`
+    assert result.steps[0]["steps"][0] == {"name": "lookup", "outcome": "failed", "outputs": own}

@@ -23,7 +23,20 @@ fragments:
     transitions:
       lookup: {done: {node: count, inputs: {revisions: revision}}, skipped: count, failed: end}
       count: {done: end, failed: end}
+  tolerant:
+    inputs: [name]
+    outputs: [total]
+    exits: [done, failed]
+    start: lookup
+    transitions:
+      lookup: {done: count, failed: count}
+      count: {done: end, failed: end}
 sequences:
+  tolerates:
+    description: Run the tolerant fragment on a name.
+    start: tolerant
+    transitions:
+      tolerant: {done: end, failed: end}
   lookup_then_count:
     description: Look a name up, then count what was found.
     start: lookup

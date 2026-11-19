@@ -102,7 +102,7 @@ class _Recorded:
             raise
         for step in result.steps:   # a failed inner step is a failure of the run, whether or not the fragment recovered
             if step["outcome"] == "failed":
-                inner = UnitResult("failed", {}, step.get("reason"), step.get("detail", {}))
+                inner = UnitResult("failed", step.get("outputs", {}), step.get("reason"), step.get("detail", {}))
                 self._run.failures.append(failure(f"{unit.name}/{step['name']}", inner))
         if result.exit == "failed":
             self._run.failures.append(failure(unit.name, result))
@@ -455,6 +455,10 @@ class Harness:
                 result = await go(macro)
             except Exception as e:  # the run raised, or the journal refused it (an unknown id)
                 error = f"{type(e).__name__}: {e}"
+            try:
+                sequence = (result or {}).get("sequence") or macro.sequence or await journal.sequence(run_id)
+            except Exception:   # a journal that cannot say leaves the record without the name
+                sequence = None
             finally:
                 await journal.close()
         finally:
@@ -462,7 +466,7 @@ class Harness:
         record = build(
             params=self.params, settings_files=self.settings_files, backend=self.backend_name, attended=self.attended,
             start=start, end=_now(), failures=run.failures, events=self.hub.record(), labels=run.labels, run_id=run_id,
-            sequence=(result or {}).get("sequence") or macro.sequence, result=result, error=error, progress=macro.progress,
+            sequence=sequence, result=result, error=error, progress=macro.progress,
         )
         return SequenceResult(record.end_state, record.facts or {}, record.steps, run_id, record.summary, record)
 

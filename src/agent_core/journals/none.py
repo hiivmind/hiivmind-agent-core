@@ -31,5 +31,8 @@ class NoJournal:
     async def rerun(self, run_id: str, from_run: str, step: int, walk: Walk) -> WalkResult:
         raise NotImplementedError
 
+    async def sequence(self, run_id: str) -> str | None:
+        return None   # nothing is kept
+
     async def close(self) -> None:
         pass
