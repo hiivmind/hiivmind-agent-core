@@ -27,7 +27,7 @@ def answer(details=None, **meta) -> AIMessage:
 
 def test_anthropic_cache_writes_are_zero_counted_or_not_reported():          # Review Focus 4
     zero = answer({"cache_read": 0, "cache_creation": 0})
-    positive = answer({"cache_read": 5, "ephemeral_5m_input_tokens": 1000, "ephemeral_1h_input_tokens": 200})
+    positive = answer({"cache_read": 5, "cache_creation": 0, "ephemeral_5m_input_tokens": 1000, "ephemeral_1h_input_tokens": 200})   # as langchain_anthropic normalises it
     unreported = answer({"cache_read": 5})
     assert [module.usage(m).cache_written for m in (zero, positive, unreported)] == [0, 1200, None]
     assert module.usage(answer({"ephemeral_5m_input_tokens": 0, "ephemeral_1h_input_tokens": 0})).cache_written == 0

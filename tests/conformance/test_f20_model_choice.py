@@ -30,7 +30,7 @@ register("model_provider", "naming")(Naming())
 @pytest.mark.feature("F20")
 async def test_the_setting_names_the_provider_and_the_model_it_is_given(harness):
     GIVEN.clear()
-    h = harness({"lookup": [LOOKUP, EXIT]}, provider="naming:big-model-7")
+    h = harness({"lookup": [LOOKUP, EXIT]}, delivery={"model": "naming:big-model-7"})
     outcome = await h.nodes.run("lookup", {"name": "alpha"})
     assert (outcome.exit, GIVEN) == ("done", ["big-model-7"])
 
@@ -38,4 +38,4 @@ async def test_the_setting_names_the_provider_and_the_model_it_is_given(harness)
 @pytest.mark.feature("F20")
 async def test_a_setting_that_names_no_provider_stops_the_run_before_it_starts(harness):
     with pytest.raises(RunCannotStart, match="provider:model"):
-        harness({"lookup": [EXIT]}, provider="nobody:model")
+        harness({"lookup": [EXIT]}, delivery={"model": "nobody:model"})

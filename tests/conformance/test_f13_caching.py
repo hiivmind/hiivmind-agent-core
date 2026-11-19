@@ -43,7 +43,7 @@ async def test_the_providers_cache_middleware_wraps_each_model_call_and_its_coun
     h = harness({"lookup": [
         {"calls": LOOKUP, "usage": {"input_tokens": 100, "input_token_details": {"cache_read": 0, "cache_creation": 60}}},
         {"calls": EXIT, "usage": {"input_tokens": 120, "input_token_details": {"cache_read": 60, "cache_creation": 0}}},
-    ]}, provider="caching:any-model")
+    ]}, delivery={"model": "caching:any-model"})
     outcome = await h.nodes.run("lookup", {"name": "alpha"})
     assert len(SEEN) == 2
     [note] = outcome.notes

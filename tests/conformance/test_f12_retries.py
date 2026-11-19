@@ -7,7 +7,7 @@ module's classification; the client's own retries are off (checked on each provi
 import pytest
 
 from agent_core.contracts.errors import ProviderRefused, ProviderUnavailable
-from agent_core.contracts.events import ModelResponded
+from agent_core.contracts.events import ModelRequested, ModelResponded
 
 EXIT = [["exit", {"outcome": "done", "outputs": {}}]]
 LOOKUP = [["lookup_revision", {"name": "alpha"}]]
@@ -30,6 +30,7 @@ async def test_a_refusal_that_passes_is_retried_by_the_middleware_only(harness, 
     h = harness({"lookup": [{"raise": "passes"}, {"raise": "passes"}, LOOKUP, EXIT]})
     outcome = await h.nodes.run("lookup", {"name": "alpha"})
     assert outcome.exit == "done"
+    assert sum(isinstance(e, ModelRequested) for e in h.events.record()) == 4   # every attempt sent is a request (CTX-6)
     assert model_calls(tmp_path, h) == 4   # two refused, two answered (the lookup and the exit): no second owner multiplied the attempts
 
 

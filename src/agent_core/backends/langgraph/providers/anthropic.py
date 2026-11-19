@@ -41,7 +41,9 @@ def usage(message: AIMessage) -> Usage:
     if not meta:
         return Usage()
     details = meta.get("input_token_details") or {}
-    written = details.get("cache_creation")
-    if written is None and ("ephemeral_5m_input_tokens" in details or "ephemeral_1h_input_tokens" in details):
+    if "ephemeral_5m_input_tokens" in details or "ephemeral_1h_input_tokens" in details:
+        # the SDK sets `cache_creation` to 0 beside a positive breakdown by lifetime: the breakdown is the count
         written = details.get("ephemeral_5m_input_tokens", 0) + details.get("ephemeral_1h_input_tokens", 0)
+    else:
+        written = details.get("cache_creation")
     return Usage(meta.get("input_tokens"), details.get("cache_read"), written)

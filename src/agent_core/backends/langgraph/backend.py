@@ -44,8 +44,8 @@ class LangGraphBackend:
             module.chat_model(name, self._settings),
             tools=sdk_tools(policy, unit.tools),
             system_prompt=policy.instructions,
-            # The hook reports each model call once; the retry owner is inside it, so a retried call is not reported again.
-            middleware=[*module.cache_middleware(), PolicyHook(policy, module, unit.events), self._retries()],
+            # The retry owner is outside the hook: each attempt sent is a request the hook reports (CTX-6, Q4).
+            middleware=[*module.cache_middleware(), self._retries(), PolicyHook(policy, module, unit.events)],
         )
         messages = _render(policy.handover)
         if policy.opening:   # a run started again ends its hand-over with a call and its result: no opening then

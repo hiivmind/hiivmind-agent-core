@@ -25,18 +25,23 @@ HERE = Path(__file__).resolve().parent
 INSTANCE = HERE / "instance"
 
 
-def deliver_scripted(scripts: dict[str, list], directory: Path) -> dict[str, str]:
-    """The scripted backend plays `<node>.json` of the directory its setting SCRIPTS names."""
+def deliver_scripted(scripts: dict[str, list], directory: Path, monkeypatch=None, **options) -> dict[str, str]:
+    """The scripted backend plays `<node>.json` of the directory its setting SCRIPTS names. It has no options."""
+    assert not options, f"the scripted backend has no delivery options: {sorted(options)}"
     directory.mkdir(parents=True, exist_ok=True)
     for node, steps in scripts.items():
         (directory / f"{node}.json").write_text(json.dumps(steps))
     return {"AGENT_CORE_SCRIPTED_SCRIPTS": str(directory)}
 
 
-def deliver_langgraph(scripts: dict[str, list], directory: Path) -> dict[str, str]:
-    """The LangGraph backend plays the scripts through the `script` model provider: `MODEL=script:<directory>`."""
+def deliver_langgraph(scripts: dict[str, list], directory: Path, monkeypatch, model: str | None = None) -> dict[str, str]:
+    """The LangGraph backend plays the scripts through the `script` model provider: `MODEL=script:<directory>`.
+    The option `model` is a model setting of the test's own instead (`"naming:big-model-7"`): a provider the test
+    registered then plays the scripts, and finds their directory in `ScriptProvider.directory`."""
     deliver_scripted(scripts, directory)
-    return {"AGENT_CORE_LANGGRAPH_MODEL": f"script:{directory}"}
+    if model is not None:
+        monkeypatch.setattr(ScriptProvider, "directory", str(directory), raising=False)
+    return {"AGENT_CORE_LANGGRAPH_MODEL": model or f"script:{directory}"}
 
 
 DELIVERY = {"scripted": deliver_scripted, "langgraph": deliver_langgraph}   # backend name -> how its scripts reach it: the environment its settings read
@@ -49,13 +54,14 @@ def pytest_generate_tests(metafunc):
 
 @pytest.fixture
 def delivered(backend_name, tmp_path, monkeypatch):
-    """`delivered(scripts)`: give the backend these scripts, for this process; returns the environment it was given."""
+    """`delivered(scripts, **options)`: give the backend these scripts, for this process; returns the environment it was
+    given. `options` are the backend's own delivery options (see its `deliver_*`)."""
     given = 0
 
-    def deliver(scripts: dict[str, list]) -> dict[str, str]:
+    def deliver(scripts: dict[str, list], **options) -> dict[str, str]:
         nonlocal given
         given += 1
-        environment = DELIVERY[backend_name](scripts, tmp_path / f"scripts-{given}")
+        environment = DELIVERY[backend_name](scripts, tmp_path / f"scripts-{given}", monkeypatch, **options)
         for key, value in environment.items():
             monkeypatch.setenv(key, value)
         return environment
@@ -64,19 +70,14 @@ def delivered(backend_name, tmp_path, monkeypatch):
 
 
 @pytest.fixture
-async def harness(backend_name, delivered, tmp_path, monkeypatch):
-    """`harness(scripts, provider=None, **options)`: a harness on the conformance instance. `options` are those of
-    `agent_core.open`; `runs` defaults to a directory of the test's own. `provider`, for the LangGraph backend, is the
-    model setting in place of `script:<directory>` (`"naming:big-model-7"`): a provider of the test's own then plays the
-    scripts, and finds their directory in `ScriptProvider.directory`."""
+async def harness(backend_name, delivered, tmp_path):
+    """`harness(scripts, delivery=None, **options)`: a harness on the conformance instance. `options` are those of
+    `agent_core.open`; `runs` defaults to a directory of the test's own. `delivery` holds the backend's own delivery
+    options, as `delivered` takes them."""
     opened = []
 
-    def make(scripts: dict[str, list], provider: str | None = None, **options):
-        environment = delivered(scripts)
-        if provider is not None:
-            directory = environment["AGENT_CORE_LANGGRAPH_MODEL"].partition(":")[2]
-            monkeypatch.setenv("AGENT_CORE_LANGGRAPH_MODEL", provider)
-            monkeypatch.setattr(ScriptProvider, "directory", directory, raising=False)
+    def make(scripts: dict[str, list], delivery: dict | None = None, **options):
+        delivered(scripts, **(delivery or {}))
         options = {"backend": backend_name, "runs": tmp_path / "runs", **options}
         opened.append(agent_core.open(INSTANCE / "instance.yaml", **options))
         return opened[-1]
