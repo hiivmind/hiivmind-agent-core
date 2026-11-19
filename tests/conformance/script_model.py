@@ -9,7 +9,7 @@ step forms only this model reads:
     {"crash": true}                                       raises SystemExit, once, whatever the process
 
 The model finds the node by the line of the brief that names it. It finds its place in the script by progress that is
-scoped to ONE CONVERSATION: the conversation's key is the run config's `thread_id` (when there is one) with the id, or
+scoped to ONE CONVERSATION: the conversation's key is the invocation config's `thread_id` (`invoke(..., config=...)` or the graph's; when there is one) with the id, or
 else the text, of the first message that is not a system message. The place is
 
     (the answers in the conversation that this model produced for this node's script: they carry
@@ -24,6 +24,7 @@ that kept the same thread id and the same first message would continue where the
 """
 
 import hashlib
+from contextvars import ContextVar
 import json
 import re
 from pathlib import Path
@@ -37,6 +38,7 @@ from langchain_core.runnables.config import var_child_runnable_config
 from agent_core.contracts.registry import register
 from agent_core.contracts.values import Usage
 
+_EXPLICIT: ContextVar = ContextVar("script_model_config", default=None)
 PROCEDURE = re.compile(r"^# Procedure of the node that is running: `([^`]+)`", re.MULTILINE)
 
 
@@ -64,9 +66,23 @@ class ScriptChatModel(BaseChatModel):
                     return found.group(1)
         raise ValueError("no message of the conversation names the node that is running")
 
+    def invoke(self, input, config=None, **kwargs):
+        token = _EXPLICIT.set(config)   # the config of this call: the base class does not install it in the context variable
+        try:
+            return super().invoke(input, config, **kwargs)
+        finally:
+            _EXPLICIT.reset(token)
+
+    async def ainvoke(self, input, config=None, **kwargs):
+        token = _EXPLICIT.set(config)
+        try:
+            return await super().ainvoke(input, config, **kwargs)
+        finally:
+            _EXPLICIT.reset(token)
+
     @staticmethod
     def _key(messages: list[BaseMessage]) -> str:
-        config = var_child_runnable_config.get() or {}
+        config = _EXPLICIT.get() or var_child_runnable_config.get() or {}   # inside LangGraph the context variable has it
         thread = (config.get("configurable") or {}).get("thread_id", "")
         first = next((m for m in messages if not isinstance(m, SystemMessage)), None)
         said = "" if first is None else (first.id or first.text)

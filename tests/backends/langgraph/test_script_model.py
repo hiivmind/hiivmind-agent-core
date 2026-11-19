@@ -77,3 +77,12 @@ def test_handed_over_answers_are_not_script_progress(tmp_path):
     handed = [HumanMessage("earlier", id="h"), AIMessage("an earlier answer"), HumanMessage("go", id="g")]
     answer = model.invoke([BRIEF, *handed])
     assert answer.tool_calls[0]["name"] == "lookup_revision"
+
+
+def test_the_same_messages_under_two_thread_ids_each_get_the_refusal_first(tmp_path):
+    model = model_of(tmp_path, [{"raise": "passes"}, "answer"])
+    messages = [BRIEF, HumanMessage("same", id="same")]
+    for thread in ("A", "B"):
+        with pytest.raises(ScriptRefusal):
+            model.invoke(messages, config={"configurable": {"thread_id": thread}})
+    assert model.invoke(messages, config={"configurable": {"thread_id": "A"}}).text == "answer"
