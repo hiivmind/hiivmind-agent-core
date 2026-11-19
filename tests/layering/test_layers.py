@@ -206,3 +206,26 @@ def test_the_core_knows_no_domain():  # CORE-4a
     for file in sorted(PKG.rglob("*")):
         if file.is_file() and file.suffix != ".pyc":
             assert "corpus" not in file.read_text().lower(), file
+
+
+def test_importing_a_contract_module_does_not_import_the_core():  # LAYER-2: a fresh process, so no earlier import hides it
+    import subprocess
+    import sys
+
+    for module in sorted(p.stem for p in (PKG / "contracts").glob("*.py") if p.stem != "__init__"):
+        code = f"import agent_core.contracts.{module}, sys; assert 'agent_core.core.facade' not in sys.modules"
+        done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        assert done.returncode == 0, (module, done.stderr[-1000:])
+
+
+def test_the_package_still_exposes_open_and_its_names_lazily():
+    import subprocess
+    import sys
+
+    code = (
+        "import agent_core, sys; assert 'agent_core.core.facade' not in sys.modules;"
+        "assert agent_core.open.__module__ == 'agent_core.core.facade';"
+        "assert agent_core.RunCannotStart.__name__ == 'RunCannotStart' and agent_core.Outcome and agent_core.FeatureNotSupported and agent_core.ToolServerError"
+    )
+    done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+    assert done.returncode == 0, done.stderr[-1000:]
