@@ -48,6 +48,7 @@ def test_a_backend_whose_settings_need_a_value_still_gives_its_matrix(monkeypatc
         def __init__(self, settings):
             raise AssertionError("the audit makes no backend")
 
+    monkeypatch.delenv("MODEL", raising=False)   # these settings have no env prefix: a MODEL in the environment would fill it
     with pytest.raises(ValidationError):
         NeedsAModel()
     monkeypatch.setitem(REGISTERED_BACKENDS, "toy", (Toy, NeedsAModel))

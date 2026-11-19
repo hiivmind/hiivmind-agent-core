@@ -98,6 +98,7 @@ async def test_a_fragment_outputs_are_the_declared_ones_and_the_nodes_other_outp
     result = await harness(SCRIPTS).sequences.run("singles", {"name": "alpha"})
     assert result.end == "done"
     assert result.facts == {"name": "alpha", "total": 7}   # `lookup` produced `revision` and it is not the fragment's output
+    assert result.summary == {"total": 7}   # what the backend returned, before the macro walk filters the facts
 
 
 @pytest.mark.feature("F16")
