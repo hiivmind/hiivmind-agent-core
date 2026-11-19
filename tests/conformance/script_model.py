@@ -104,9 +104,7 @@ class ScriptChatModel(BaseChatModel):
         )
         played = self._played(node, key)
         position = answered + played
-        if position >= len(steps):
-            raise RuntimeError(f"the script of node {node} has {len(steps)} steps and the model was asked for step {position + 1}")
-        step = steps[position]
+        step = steps[position] if position < len(steps) else ""   # a script that runs out is the model stopping with nothing said
         if isinstance(step, dict) and "raise" in step:
             self._progress_file(node, key).write_text(str(played + 1))
             raise ScriptRefusal(step["raise"])

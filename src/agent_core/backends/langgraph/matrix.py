@@ -27,7 +27,16 @@ _FIXED = {
     Feature.F19: "deferred: no consumer in this delivery",
 }
 
+_NATIVE = {
+    Feature.F1: "`create_agent`",
+    Feature.F2: "`ToolNode` runs the tools after `after_model` reviews the response",
+    Feature.F18: "the offered tools; `after_model` and `wrap_tool_call`",
+    Feature.F15: "LangChain callbacks and hooks, mapped to events; LangSmith by its own environment variables",
+    Feature.F21: "the core builds the brief; the backend passes it as `system_prompt`",
+}
+
 FEATURES: Matrix = {
-    feature: Entry("not built", _FIXED[feature] if feature in _FIXED else f"Plan 2, task {_TASK[feature]}")
+    feature: Entry("native", _NATIVE[feature]) if feature in _NATIVE
+    else Entry("not built", _FIXED[feature] if feature in _FIXED else f"Plan 2, task {_TASK[feature]}")
     for feature in Feature
 }
