@@ -91,7 +91,7 @@ uv run mountainash-auth-openai status --application hiivmind-agent-core
 AGENT_CORE_LANGGRAPH_MODEL=openai:gpt-6-luna AGENT_CORE_LANGGRAPH_CREDENTIAL=account agent-core job instance.yaml <sequence>
 ```
 
-With `account`, the client is the subscription route's: the Responses API, streamed, not stored, with no output-token cap (`MAX_TOKENS` does not apply) and no temperature, and the node's instructions sent as the request's `instructions`, since the route refuses a system message. The core never handles a credential. Whether a use is within the "Sign in with ChatGPT" terms is the user's responsibility.
+With `account`, the client is the subscription route's: the Responses API, streamed, not stored, with no output-token cap (`MAX_TOKENS` does not apply) and no temperature. Each call takes the route's shape: the node's instructions go as the request's `instructions`, since the route refuses a system message, and the tools go with `strict: false`, since the route otherwise makes the model fill every optional parameter. The core never handles a credential. Whether a use is within the "Sign in with ChatGPT" terms is the user's responsibility.
 
 | When | What the run says |
 |---|---|

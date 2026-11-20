@@ -93,25 +93,32 @@ def refusal(error: BaseException, settings: LangGraphSettings) -> str:
     return f"the provider refused: {code} ({gloss})" if gloss else f"the provider refused: {code}"
 
 
-class _AsInstructions(AgentMiddleware):
-    """The subscription route refuses a system message: the node's instructions go as the Responses API's
-    `instructions`, a parameter of the model call."""
+class _RouteShape(AgentMiddleware):
+    """Each model call as the subscription route takes it (`ROUTE`): the node's instructions go as the Responses API's
+    `instructions`, since a system message is refused; the tools go with `strict: false`, since a tool is otherwise
+    strict and the model fills every optional property."""
+
+    def __init__(self, route):
+        super().__init__()
+        self._route = route
 
     async def awrap_model_call(self, request, handler):
-        if request.system_message is None:
-            return await handler(request)
-        settings = {**request.model_settings, "instructions": request.system_message.text}
-        return await handler(request.override(system_message=None, model_settings=settings))
+        settings, changes = dict(request.model_settings), {}
+        if not self._route.accepts_system_messages and request.system_message is not None:
+            settings["instructions"] = request.system_message.text
+            changes["system_message"] = None
+        if self._route.tools_strict_by_default and request.tools:
+            settings["strict"] = False
+        return await handler(request.override(model_settings=settings, **changes))
 
 
 def middleware(settings: LangGraphSettings) -> list[AgentMiddleware]:
-    """OpenAI caches a long enough prefix by itself; on the account path the route's facts decide (`ROUTE`)."""
-    if settings.CREDENTIAL == "account":
-        from mountainash_auth_openai import ROUTE
+    """OpenAI caches a long enough prefix by itself. On the account path, the subscription route's facts shape each call."""
+    if settings.CREDENTIAL != "account":
+        return []
+    from mountainash_auth_openai import ROUTE
 
-        if not ROUTE.accepts_system_messages:
-            return [_AsInstructions()]
-    return []
+    return [_RouteShape(ROUTE)]
 
 
 def usage(message: AIMessage) -> Usage:

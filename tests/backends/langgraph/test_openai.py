@@ -164,22 +164,27 @@ def test_the_backend_hands_its_settings_to_the_provider_for_a_plan_refusal(accou
     assert LangGraphBackend(ENV)._mapped(status_error(openai.AuthenticationError, 401, "invalid_api_key")).__class__ is openai.AuthenticationError
 
 
-async def test_on_the_account_path_the_instructions_go_as_the_responses_instructions(accounts):    # ROUTE.accepts_system_messages
+async def test_on_the_account_path_the_request_takes_the_routes_shape(accounts):    # ROUTE.accepts_system_messages, ROUTE.tools_strict_by_default
     from langchain.agents.middleware import ModelRequest
     from langchain_core.messages import HumanMessage, SystemMessage
+    from langchain_core.tools import StructuredTool
 
+    schema = {"type": "object", "properties": {"path": {"type": "string"}, "head": {"type": "number"}, "tail": {"type": "number"}}, "required": ["path"]}
+    read = StructuredTool(name="read_text_file", description="read a file", args_schema=schema, coroutine=lambda **_: "")
     model = module.chat_model("gpt-6-luna", ACCOUNT)
-    [moves] = module.middleware(ACCOUNT)
-    request = ModelRequest(model=model, messages=[HumanMessage("go")], system_message=SystemMessage("Do the node."), model_settings={"x": 1})
+    [shapes] = module.middleware(ACCOUNT)
+    request = ModelRequest(model=model, messages=[HumanMessage("go")], system_message=SystemMessage("Do the node."), tools=[read], model_settings={"x": 1})
     sent = []
 
     async def handler(request):
         sent.append(request)
         return AIMessage("ok")
 
-    await moves.awrap_model_call(request, handler)
+    await shapes.awrap_model_call(request, handler)
     [request] = sent
-    assert (request.system_message, request.model_settings) == (None, {"x": 1, "instructions": "Do the node."})
-    payload = model._get_request_payload(request.messages, instructions="Do the node.")   # what ChatOpenAI sends
+    assert (request.system_message, request.model_settings) == (None, {"x": 1, "instructions": "Do the node.", "strict": False})
+    bound = request.model.bind_tools(request.tools, **request.model_settings)   # as the agent binds them
+    payload = model._get_request_payload(request.messages, **bound.kwargs)       # what ChatOpenAI sends
     assert payload["instructions"] == "Do the node."
     assert [item.get("role") for item in payload["input"]] == ["user"]
+    assert [tool["strict"] for tool in payload["tools"]] == [False]   # an optional property stays optional
