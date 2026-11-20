@@ -72,6 +72,37 @@ mountainash-settings = { git = "ssh://git@github.com/mountainash-io/mountainash-
 uv sync    # the core, the test tools and the shell server
 ```
 
+## Models and credentials (LangGraph backend)
+
+`AGENT_CORE_LANGGRAPH_MODEL` is `provider:model` (`anthropic:claude-sonnet-5-5`, `openai:gpt-6-luna`); there is no default. Each provider needs its extra: `agent-core[langgraph,anthropic]` or `agent-core[langgraph,openai]`.
+
+`AGENT_CORE_LANGGRAPH_CREDENTIAL` says how the provider's code obtains its credential:
+
+| Value | Meaning |
+|---|---|
+| `env` (default) | the provider's key from the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) |
+| `account` | OpenAI only: the ChatGPT plan of the account signed in with [`mountainash-auth-openai`](https://github.com/mountainash-io/mountainash-auth-openai), for the application `hiivmind-agent-core` |
+
+Sign in once, in a browser; the token is refreshed without a person after that:
+
+```bash
+uv run mountainash-auth-openai sign-in --application hiivmind-agent-core
+uv run mountainash-auth-openai status --application hiivmind-agent-core
+AGENT_CORE_LANGGRAPH_MODEL=openai:gpt-6-luna AGENT_CORE_LANGGRAPH_CREDENTIAL=account agent-core job instance.yaml <sequence>
+```
+
+With `account`, the client is the subscription route's: the Responses API, streamed, not stored, with no output-token cap (`MAX_TOKENS` does not apply) and no temperature. The core never handles a credential. Whether a use is within the "Sign in with ChatGPT" terms is the user's responsibility.
+
+| When | What the run says |
+|---|---|
+| nobody is signed in, the plan permission was not given, or OpenAI refused the sign-in for good | the node fails with the sign-in package's message, naming the account and `mountainash-auth-openai sign-in --application hiivmind-agent-core`; it is not run again |
+| `account` with `MODEL=anthropic:…` | the node fails: `the provider anthropic has no signed-in account; set AGENT_CORE_LANGGRAPH_CREDENTIAL=env to use its key.` |
+| `account` without `mountainash-auth-openai` installed | the run does not start: ``CREDENTIAL=account needs mountainash-auth-openai: install agent-core with the extra `openai`.`` |
+| the plan's usage is spent, or ChatGPT does not authorize the request | the node fails with the reason (`ChatGPT plan usage is limited. Review https://chatgpt.com/settings/usage before resuming.`); a fan-out does not run that item again |
+| a refresh fails for now, or a rate limit with no usage code | retried, as any refusal that passes |
+
+The `openai` extra takes `mountainash-auth-openai` and `mountainash-auth-client` by git revision; a project that depends on agent-core with that extra repeats them as `agent-core` does (`[tool.uv.sources]` for `mountainash-auth-openai`, `[tool.uv] override-dependencies` for its two siblings).
+
 ## `agent-core job`
 
 `agent-core job <instance.yaml> <sequence>` runs a sequence of the topology. A name that is not a sequence exits 2, listing the sequences.
