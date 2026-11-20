@@ -47,3 +47,54 @@ def test_the_client_does_not_retry_and_the_reply_limit_is_the_setting(monkeypatc
     model = module.chat_model("gpt-6-luna", LangGraphSettings(MODEL="openai:gpt-6-luna", MAX_RETRIES=8, MAX_TOKENS=1234))
     assert model.max_retries == 0
     assert model.max_tokens == 1234
+
+
+class StandInAccounts:
+    """`OpenAIAccounts` as the provider uses it: opened by application, an async token call. No file, no network."""
+
+    opened: list[str] = []
+    token_error: BaseException | None = None
+
+    @classmethod
+    def open(cls, application: str) -> "StandInAccounts":
+        cls.opened.append(application)
+        return cls()
+
+    async def token(self) -> str:
+        if StandInAccounts.token_error is not None:
+            raise StandInAccounts.token_error
+        return "stand-in"
+
+
+@pytest.fixture
+def accounts(monkeypatch):
+    import mountainash_auth_openai
+
+    StandInAccounts.opened = []
+    StandInAccounts.token_error = None
+    monkeypatch.setattr(mountainash_auth_openai, "OpenAIAccounts", StandInAccounts)
+    return StandInAccounts
+
+
+def test_env_builds_the_client_as_before(accounts, monkeypatch):    # CRED-14
+    monkeypatch.setenv("OPENAI_API_KEY", "not-used")
+    settings = LangGraphSettings(MODEL="openai:gpt-6-luna", MAX_TOKENS=1234)
+    model = module.chat_model("gpt-6-luna", settings)
+    assert (model.max_tokens, model.max_retries) == (1234, 0)
+    assert accounts.opened == []
+
+
+async def test_account_builds_the_subscription_client(accounts):    # CRED-15
+    from langchain_openai import ChatOpenAI
+    from mountainash_auth_openai import ROUTE
+
+    model = module.chat_model("gpt-6-luna", LangGraphSettings(MODEL="openai:gpt-6-luna", CREDENTIAL="account"))
+    assert isinstance(model, ChatOpenAI)
+    assert model.use_responses_api is True
+    assert model.streaming is ROUTE.stream
+    assert model.store is ROUTE.store
+    assert model.max_tokens is None and model.temperature is None
+    assert model.max_retries == 0
+    assert model.openai_api_base == ROUTE.base_url
+    assert accounts.opened == ["hiivmind-agent-core"] == [module.APPLICATION]
+    assert await model.openai_api_key() == "stand-in"

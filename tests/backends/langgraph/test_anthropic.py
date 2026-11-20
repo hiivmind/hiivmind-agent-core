@@ -67,3 +67,39 @@ def test_the_client_does_not_retry_and_the_reply_limit_is_the_setting(monkeypatc
     monkeypatch.setenv("ANTHROPIC_API_KEY", "not-used")
     model = module.chat_model("claude-haiku-5-5", LangGraphSettings(MODEL="anthropic:claude-haiku-5-5", MAX_RETRIES=8, MAX_TOKENS=1234))
     assert (model.max_retries, model.max_tokens) == (0, 1234)
+
+
+E5 = "the provider anthropic has no signed-in account; set AGENT_CORE_LANGGRAPH_CREDENTIAL=env to use its key."
+
+
+def test_account_is_refused_for_anthropic():    # E5, CRED-17
+    from agent_core.contracts.errors import ProviderRefused
+
+    with pytest.raises(ProviderRefused) as refused:
+        module.chat_model("claude-haiku-5-5", LangGraphSettings(MODEL="anthropic:claude-haiku-5-5", CREDENTIAL="account"))
+    assert str(refused.value) == E5
+
+
+def test_account_on_anthropic_never_imports_the_sign_in_package():    # CRED-16, Review Focus 3
+    import subprocess
+    import sys
+
+    code = (
+        "import sys\n"
+        "from agent_core.backends.langgraph.providers import anthropic as m\n"
+        "from agent_core.backends.langgraph.settings import LangGraphSettings\n"
+        "from agent_core.contracts.errors import ProviderRefused\n"
+        "try:\n"
+        "    m.chat_model('claude-haiku-5-5', LangGraphSettings(MODEL='anthropic:claude-haiku-5-5', CREDENTIAL='account'))\n"
+        "except ProviderRefused:\n"
+        "    pass\n"
+        "assert 'mountainash_auth_openai' not in sys.modules\n"
+    )
+    ran = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=120)
+    assert ran.returncode == 0, ran.stderr
+
+
+def test_env_is_unchanged_for_anthropic(monkeypatch):    # CRED-14
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "not-used")
+    model = module.chat_model("claude-haiku-5-5", LangGraphSettings(MODEL="anthropic:claude-haiku-5-5"))
+    assert (model.max_retries, model.max_tokens) == (0, 16000)

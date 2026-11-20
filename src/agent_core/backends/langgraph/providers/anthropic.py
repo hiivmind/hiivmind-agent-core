@@ -10,6 +10,7 @@ from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage
 
 from agent_core.backends.langgraph.settings import LangGraphSettings
+from agent_core.contracts.errors import ProviderRefused
 from agent_core.contracts.values import Usage
 
 name = "anthropic"
@@ -21,6 +22,8 @@ def check(settings: LangGraphSettings) -> None:
 
 
 def chat_model(model: str, settings: LangGraphSettings) -> BaseChatModel:
+    if settings.CREDENTIAL == "account":   # Anthropic has no signed-in account: refused before any model call (E5, CRED-17)
+        raise ProviderRefused("the provider anthropic has no signed-in account; set AGENT_CORE_LANGGRAPH_CREDENTIAL=env to use its key.")
     return init_chat_model(f"anthropic:{model}", max_tokens=settings.MAX_TOKENS, max_retries=0)   # the retry middleware is the one owner (MOD-6)
 
 
