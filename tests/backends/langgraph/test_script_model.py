@@ -32,15 +32,16 @@ def ask(model, conversation, first="one"):
 
 def test_the_script_provider_is_usable_through_provider_module(tmp_path):
     module, name = provider_module(f"script:{tmp_path}")
-    model = module.chat_model(name, LangGraphSettings(MODEL=f"script:{tmp_path}"))
+    settings = LangGraphSettings(MODEL=f"script:{tmp_path}")
+    model = module.chat_model(name, settings)
     assert isinstance(model, ScriptChatModel)
-    assert module.classify(ScriptRefusal("passes")) == "passes"
-    assert module.classify(ValueError()) == "other"
+    assert module.classify(ScriptRefusal("passes"), settings) == "passes"
+    assert module.classify(ValueError(), settings) == "other"
     assert module.cache_middleware() == []
     message = AIMessage("x", usage_metadata={"input_tokens": 5, "output_tokens": 1, "total_tokens": 6, "input_token_details": {"cache_read": 2}})
     usage = module.usage(message)
     assert (usage.sent, usage.cache_read, usage.cache_written) == (5, 2, None)
-    assert "refused" in module.refusal(ScriptRefusal("will not pass"))
+    assert "refused" in module.refusal(ScriptRefusal("will not pass"), settings)
 
 
 def test_two_interleaved_conversations_each_consume_their_own_refusals(tmp_path):

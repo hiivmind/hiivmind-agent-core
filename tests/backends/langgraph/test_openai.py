@@ -17,9 +17,13 @@ def status_error(cls, status, code=None):
     return cls("said no", response=httpx.Response(status, request=REQUEST), body=body)
 
 
+ENV = LangGraphSettings(MODEL="openai:gpt-6-luna")
+ACCOUNT = LangGraphSettings(MODEL="openai:gpt-6-luna", CREDENTIAL="account")
+
+
 def test_insufficient_quota_will_not_pass_and_says_why():                    # example 4, MOD-5
     e = status_error(openai.RateLimitError, 429, "insufficient_quota")
-    assert (module.classify(e), module.refusal(e)) == ("will not pass", "the provider refused: insufficient_quota (no credit)")
+    assert (module.classify(e, ENV), module.refusal(e, ENV)) == ("will not pass", "the provider refused: insufficient_quota (no credit)")
 
 
 @pytest.mark.parametrize("error, kind", [
@@ -31,7 +35,43 @@ def test_insufficient_quota_will_not_pass_and_says_why():                    # e
     (ValueError("x"), "other"),
 ])
 def test_what_passes_and_what_is_not_a_refusal(error, kind):
-    assert module.classify(error) == kind
+    assert module.classify(error, ENV) == kind
+
+
+def account_cases():
+    from mountainash_auth_openai import PlanPermissionRequired, RefreshFailed, Refusal, SignInRequired, reason
+
+    nobody = SignInRequired("no OpenAI account is signed in for hiivmind-agent-core. Sign in: mountainash-auth-openai sign-in --application hiivmind-agent-core")
+    no_plan = PlanPermissionRequired("owner@example.com has not allowed hiivmind-agent-core to use the ChatGPT plan.")
+    refused = SignInRequired("OpenAI refused the sign-in of owner@example.com for hiivmind-agent-core (invalid_grant).", refused="invalid_grant")
+    return [   # (error, classify, refusal text or None)
+        (nobody, "will not pass", str(nobody)),                                                         # E3
+        (no_plan, "will not pass", str(no_plan)),                                                       # E3b
+        (refused, "will not pass", str(refused)),                                                       # E4
+        (RefreshFailed("could not be refreshed; try again later."), "passes", None),
+        (status_error(openai.RateLimitError, 429, "subscription_sharing_usage_limit_exceeded"), "will not pass", reason(Refusal.USAGE_LIMIT)),   # E7
+        (status_error(openai.PermissionDeniedError, 403, "chatpass_v2_scope_not_authorized"), "will not pass", reason(Refusal.PERMISSION)),
+        (status_error(openai.AuthenticationError, 401, "invalid_api_key"), "will not pass", reason(Refusal.SIGN_IN)),
+        (ValueError("subscription_sharing_usage_limit_exceeded: limit reached"), "will not pass", reason(Refusal.USAGE_LIMIT)),   # a stream `error` event
+        (ValueError("something else went wrong"), "other", None),
+        (status_error(openai.RateLimitError, 429), "passes", None),                                     # E8, CRED-21
+    ]
+
+
+@pytest.mark.parametrize("case", range(10))
+def test_refusals_on_the_account_path(case):    # CRED-19, CRED-20, CRED-21
+    error, kind, text = account_cases()[case]
+    assert module.classify(error, ACCOUNT) == kind
+    if text is not None:
+        assert module.refusal(error, ACCOUNT) == text
+
+
+def test_an_env_run_keeps_its_meaning_after_an_account_client_was_built(accounts):    # Review Focus 2
+    module.chat_model("gpt-6-luna", ACCOUNT)   # the sign-in package is now loaded in this process
+    e = status_error(openai.AuthenticationError, 401, "invalid_api_key")
+    assert module.classify(e, ENV) == "other"
+    quota = status_error(openai.RateLimitError, 429, "insufficient_quota")
+    assert (module.classify(quota, ENV), module.refusal(quota, ENV)) == ("will not pass", "the provider refused: insufficient_quota (no credit)")
 
 
 def test_openai_has_no_cache_middleware_and_does_not_report_cache_writes():
@@ -98,3 +138,27 @@ async def test_account_builds_the_subscription_client(accounts):    # CRED-15
     assert model.openai_api_base == ROUTE.base_url
     assert accounts.opened == ["hiivmind-agent-core"] == [module.APPLICATION]
     assert await model.openai_api_key() == "stand-in"
+
+
+async def test_a_token_call_that_raises_reaches_classify_as_itself(accounts):    # Review Focus 1, CRED-19
+    from mountainash_auth_openai import PlanPermissionRequired
+
+    accounts.token_error = PlanPermissionRequired("owner@example.com has not allowed hiivmind-agent-core to use the ChatGPT plan.")
+    model = module.chat_model("gpt-6-luna", ACCOUNT)
+    with pytest.raises(PlanPermissionRequired) as raised:   # the token call fails before any request is sent
+        await model.ainvoke("hi")
+    assert module.classify(raised.value, ACCOUNT) == "will not pass"
+
+
+def test_the_backend_hands_its_settings_to_the_provider_for_a_plan_refusal(accounts):    # E7, CRED-20
+    from mountainash_auth_openai import Refusal, reason
+
+    from agent_core.backends.langgraph.backend import LangGraphBackend
+    from agent_core.contracts.errors import ProviderRefused
+
+    backend = LangGraphBackend(ACCOUNT)
+    spent = status_error(openai.RateLimitError, 429, "subscription_sharing_usage_limit_exceeded")
+    mapped = backend._mapped(spent)
+    assert isinstance(mapped, ProviderRefused) and str(mapped) == reason(Refusal.USAGE_LIMIT)
+    assert backend._retries().retry_on(spent) is False   # the retry middleware does not send it again (MOD-4)
+    assert LangGraphBackend(ENV)._mapped(status_error(openai.AuthenticationError, 401, "invalid_api_key")).__class__ is openai.AuthenticationError

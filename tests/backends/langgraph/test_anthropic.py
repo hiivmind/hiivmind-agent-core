@@ -40,6 +40,9 @@ def test_what_the_response_does_not_report_is_none_not_zero():
     assert module.usage(answer({"cache_read": 3, "cache_creation": 4})) == Usage(10, 3, 4)
 
 
+SETTINGS = LangGraphSettings(MODEL="anthropic:claude-haiku-5-5")
+
+
 @pytest.mark.parametrize("cls, status, kind", [
     (anthropic.RateLimitError, 429, "passes"),
     (anthropic.InternalServerError, 500, "passes"),
@@ -48,12 +51,12 @@ def test_what_the_response_does_not_report_is_none_not_zero():
     (anthropic.AuthenticationError, 401, "other"),
 ])
 def test_refusals_that_pass_are_the_rate_limit_server_and_connection_errors(cls, status, kind):
-    assert module.classify(status_error(cls, status)) == kind
+    assert module.classify(status_error(cls, status), SETTINGS) == kind
 
 
 def test_a_dropped_connection_passes_and_a_plain_error_does_not():
-    assert module.classify(anthropic.APIConnectionError(request=REQUEST)) == "passes"
-    assert module.classify(ValueError("x")) == "other"
+    assert module.classify(anthropic.APIConnectionError(request=REQUEST), SETTINGS) == "passes"
+    assert module.classify(ValueError("x"), SETTINGS) == "other"
 
 
 def test_the_cache_middleware_is_anthropics_prompt_caching():

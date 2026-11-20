@@ -54,7 +54,30 @@ def _code(error: BaseException) -> str | None:
     return code if isinstance(code, str) else None
 
 
-def classify(error: BaseException) -> Literal["passes", "will not pass", "other"]:
+def _account_refusal(error: BaseException) -> tuple[Literal["passes", "will not pass"], str] | None:
+    """On the account path: the sign-in package's own errors, and the subscription route's refusals read through the
+    package's table, from an HTTP status error or a streamed `error` event (`ValueError("<code>: <message>")`).
+    `None` for anything the package does not name: today's rules then apply (CRED-19, CRED-20, CRED-21)."""
+    from mountainash_auth_openai import PlanPermissionRequired, RefreshFailed, Refusal, SignInRequired, reason
+    from mountainash_auth_openai import classify as route_refusal
+
+    if isinstance(error, (SignInRequired, PlanPermissionRequired)):
+        return "will not pass", str(error)   # the package's text names the account and the command to run
+    if isinstance(error, RefreshFailed):
+        return "passes", str(error)   # the sign-in is kept; a later call may pass
+    if isinstance(error, openai.APIStatusError):
+        refused = route_refusal(_code(error), error.status_code)
+    elif isinstance(error, ValueError):
+        code, colon, _ = str(error).partition(": ")
+        refused = route_refusal(code, None) if colon else Refusal.OTHER
+    else:
+        return None
+    return None if refused is Refusal.OTHER else ("will not pass", reason(refused))
+
+
+def classify(error: BaseException, settings: LangGraphSettings) -> Literal["passes", "will not pass", "other"]:
+    if settings.CREDENTIAL == "account" and (found := _account_refusal(error)) is not None:
+        return found[0]
     if isinstance(error, openai.RateLimitError):
         return "will not pass" if _code(error) == "insufficient_quota" else "passes"   # no credit does not come back by waiting
     if isinstance(error, (openai.InternalServerError, openai.APIConnectionError)):
@@ -62,7 +85,9 @@ def classify(error: BaseException) -> Literal["passes", "will not pass", "other"
     return "other"
 
 
-def refusal(error: BaseException) -> str:
+def refusal(error: BaseException, settings: LangGraphSettings) -> str:
+    if settings.CREDENTIAL == "account" and (found := _account_refusal(error)) is not None:
+        return found[1]
     code = _code(error) or "unknown"
     gloss = GLOSS.get(code)
     return f"the provider refused: {code} ({gloss})" if gloss else f"the provider refused: {code}"

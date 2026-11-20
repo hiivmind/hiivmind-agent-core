@@ -27,14 +27,14 @@ def chat_model(model: str, settings: LangGraphSettings) -> BaseChatModel:
     return init_chat_model(f"anthropic:{model}", max_tokens=settings.MAX_TOKENS, max_retries=0)   # the retry middleware is the one owner (MOD-6)
 
 
-def classify(error: BaseException) -> Literal["passes", "will not pass", "other"]:
+def classify(error: BaseException, settings: LangGraphSettings) -> Literal["passes", "will not pass", "other"]:
     """A refusal (429), a server error (5xx, 529 included) and a failed connection pass; anything else is not a refusal."""
     if isinstance(error, (anthropic.RateLimitError, anthropic.InternalServerError, anthropic.APIConnectionError)):
         return "passes"
     return "other"
 
 
-def refusal(error: BaseException) -> str:
+def refusal(error: BaseException, settings: LangGraphSettings) -> str:
     return f"the provider refused: {error}"   # no Anthropic error is classified `will not pass`
 
 

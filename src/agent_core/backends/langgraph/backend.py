@@ -104,19 +104,19 @@ class LangGraphBackend:
         return policy.finish(state["node"], said)
     def _retries(self) -> ModelRetryMiddleware:
         """The one retry owner (MOD-6): the client's own retries are off. What it gives up on is raised as it was."""
-        module = self._provider
+        module, settings = self._provider, self._settings
         return ModelRetryMiddleware(
-            max_retries=self._settings.MAX_RETRIES, retry_on=lambda e: module.classify(e) == "passes", on_failure="error",
+            max_retries=settings.MAX_RETRIES, retry_on=lambda e: module.classify(e, settings) == "passes", on_failure="error",
         )
 
     def _mapped(self, error: Exception) -> Exception:
         """What the retry middleware raised, as the core reads it: a refusal that passes (RTY-2a) or one that will not
-        (MOD-4); any other error is its own."""
-        match self._provider.classify(error):
+        (MOD-4); any other error is its own. The provider reads its errors against this backend's settings."""
+        match self._provider.classify(error, self._settings):
             case "passes":
                 return ProviderUnavailable(f"{type(error).__name__}: {error}")
             case "will not pass":
-                return ProviderRefused(self._provider.refusal(error))
+                return ProviderRefused(self._provider.refusal(error, self._settings))
             case _:
                 return error
 
