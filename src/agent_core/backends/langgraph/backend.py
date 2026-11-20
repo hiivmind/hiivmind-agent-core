@@ -82,8 +82,9 @@ class LangGraphBackend:
             module.chat_model(name, self._settings),
             tools=sdk_tools(policy, unit.tools),
             system_prompt=policy.instructions,
-            # The retry owner is outside the hook: each attempt sent is a request the hook reports (CTX-6, Q4).
-            middleware=[*module.cache_middleware(), self._retries(), PolicyHook(policy, module, unit.events)],
+            # The retry owner is outside the hook: each attempt sent is a request the hook reports (CTX-6, Q4). The
+            # provider's middleware is inside it, nearest the model: the hook reports the request as the node built it.
+            middleware=[self._retries(), PolicyHook(policy, module, unit.events), *module.middleware(self._settings)],
             checkpointer=checkpointer,
         )
         messages = _render(policy.handover)

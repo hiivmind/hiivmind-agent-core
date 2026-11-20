@@ -154,7 +154,7 @@ class ScriptProvider:
     def refusal(self, error: BaseException, settings) -> str:
         return f"the provider refused: {error}"
 
-    def cache_middleware(self) -> list:
+    def middleware(self, settings) -> list:
         return []
 
     def usage(self, message: AIMessage) -> Usage:

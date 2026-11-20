@@ -37,7 +37,7 @@ def test_the_script_provider_is_usable_through_provider_module(tmp_path):
     assert isinstance(model, ScriptChatModel)
     assert module.classify(ScriptRefusal("passes"), settings) == "passes"
     assert module.classify(ValueError(), settings) == "other"
-    assert module.cache_middleware() == []
+    assert module.middleware(settings) == []
     message = AIMessage("x", usage_metadata={"input_tokens": 5, "output_tokens": 1, "total_tokens": 6, "input_token_details": {"cache_read": 2}})
     usage = module.usage(message)
     assert (usage.sent, usage.cache_read, usage.cache_written) == (5, 2, None)

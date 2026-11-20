@@ -38,7 +38,7 @@ def refusal(error: BaseException, settings: LangGraphSettings) -> str:
     return f"the provider refused: {error}"   # no Anthropic error is classified `will not pass`
 
 
-def cache_middleware() -> list[AgentMiddleware]:
+def middleware(settings: LangGraphSettings) -> list[AgentMiddleware]:
     return [AnthropicPromptCachingMiddleware()]
 
 

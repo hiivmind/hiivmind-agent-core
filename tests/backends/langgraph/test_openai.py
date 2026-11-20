@@ -74,8 +74,8 @@ def test_an_env_run_keeps_its_meaning_after_an_account_client_was_built(accounts
     assert (module.classify(quota, ENV), module.refusal(quota, ENV)) == ("will not pass", "the provider refused: insufficient_quota (no credit)")
 
 
-def test_openai_has_no_cache_middleware_and_does_not_report_cache_writes():
-    assert module.cache_middleware() == []
+def test_an_env_run_has_no_middleware_and_does_not_report_cache_writes():
+    assert module.middleware(ENV) == []
     message = AIMessage("ok")
     message.usage_metadata = {"input_tokens": 9, "output_tokens": 1, "total_tokens": 10, "input_token_details": {"cache_read": 4}}
     assert module.usage(message) == Usage(9, 4, None)
@@ -162,3 +162,24 @@ def test_the_backend_hands_its_settings_to_the_provider_for_a_plan_refusal(accou
     assert isinstance(mapped, ProviderRefused) and str(mapped) == reason(Refusal.USAGE_LIMIT)
     assert backend._retries().retry_on(spent) is False   # the retry middleware does not send it again (MOD-4)
     assert LangGraphBackend(ENV)._mapped(status_error(openai.AuthenticationError, 401, "invalid_api_key")).__class__ is openai.AuthenticationError
+
+
+async def test_on_the_account_path_the_instructions_go_as_the_responses_instructions(accounts):    # ROUTE.accepts_system_messages
+    from langchain.agents.middleware import ModelRequest
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    model = module.chat_model("gpt-6-luna", ACCOUNT)
+    [moves] = module.middleware(ACCOUNT)
+    request = ModelRequest(model=model, messages=[HumanMessage("go")], system_message=SystemMessage("Do the node."), model_settings={"x": 1})
+    sent = []
+
+    async def handler(request):
+        sent.append(request)
+        return AIMessage("ok")
+
+    await moves.awrap_model_call(request, handler)
+    [request] = sent
+    assert (request.system_message, request.model_settings) == (None, {"x": 1, "instructions": "Do the node."})
+    payload = model._get_request_payload(request.messages, instructions="Do the node.")   # what ChatOpenAI sends
+    assert payload["instructions"] == "Do the node."
+    assert [item.get("role") for item in payload["input"]] == ["user"]

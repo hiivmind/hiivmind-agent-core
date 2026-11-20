@@ -59,10 +59,10 @@ def test_a_dropped_connection_passes_and_a_plain_error_does_not():
     assert module.classify(ValueError("x"), SETTINGS) == "other"
 
 
-def test_the_cache_middleware_is_anthropics_prompt_caching():
+def test_the_middleware_is_anthropics_prompt_caching():
     from langchain_anthropic.middleware import AnthropicPromptCachingMiddleware
 
-    [one] = module.cache_middleware()
+    [one] = module.middleware(SETTINGS)
     assert isinstance(one, AnthropicPromptCachingMiddleware)
 
 

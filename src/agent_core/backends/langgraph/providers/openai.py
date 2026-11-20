@@ -93,8 +93,25 @@ def refusal(error: BaseException, settings: LangGraphSettings) -> str:
     return f"the provider refused: {code} ({gloss})" if gloss else f"the provider refused: {code}"
 
 
-def cache_middleware() -> list[AgentMiddleware]:
-    return []   # OpenAI caches a long enough prefix by itself
+class _AsInstructions(AgentMiddleware):
+    """The subscription route refuses a system message: the node's instructions go as the Responses API's
+    `instructions`, a parameter of the model call."""
+
+    async def awrap_model_call(self, request, handler):
+        if request.system_message is None:
+            return await handler(request)
+        settings = {**request.model_settings, "instructions": request.system_message.text}
+        return await handler(request.override(system_message=None, model_settings=settings))
+
+
+def middleware(settings: LangGraphSettings) -> list[AgentMiddleware]:
+    """OpenAI caches a long enough prefix by itself; on the account path the route's facts decide (`ROUTE`)."""
+    if settings.CREDENTIAL == "account":
+        from mountainash_auth_openai import ROUTE
+
+        if not ROUTE.accepts_system_messages:
+            return [_AsInstructions()]
+    return []
 
 
 def usage(message: AIMessage) -> Usage:

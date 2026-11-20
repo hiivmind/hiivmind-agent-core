@@ -47,7 +47,7 @@ include = ["src/agent_core/**/*.py", "src/agent_core/assets/*.md", "src/agent_co
 [tool.uv.sources]
 agent-tools = { workspace = true }
 mountainash-settings = { git = "ssh://git@github.com/mountainash-io/mountainash-settings.git", rev = "7a4b43bf4789b43a808ca1520012fc413d221e64" }
-mountainash-auth-openai = { git = "ssh://git@github.com/mountainash-io/mountainash-auth-openai.git", rev = "01ea70a946541ea68d0b3c43b4f2e1592ffd5aaa" }
+mountainash-auth-openai = { git = "ssh://git@github.com/mountainash-io/mountainash-auth-openai.git", rev = "b47fd39d86ea6c7e0a05b960d5e8d96827abe4f3" }
 
 [tool.uv]
 # mountainash-auth-openai names its siblings by path in its own sources; pin them here as the core pins its settings.

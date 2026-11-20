@@ -9,8 +9,10 @@ from pathlib import Path
 
 import pytest
 from langchain.agents.middleware import AgentMiddleware
+from langchain_core.messages import SystemMessage
 from script_model import ScriptChatModel, ScriptProvider
 
+from agent_core.contracts.events import ModelRequested
 from agent_core.contracts.registry import register
 
 EXIT = [["exit", {"outcome": "done", "outputs": {}}]]
@@ -30,11 +32,31 @@ class CachingProvider(ScriptProvider):
     def chat_model(self, model: str, settings):
         return ScriptChatModel(directory=Path(self.directory))
 
-    def cache_middleware(self) -> list:
+    def middleware(self, settings) -> list:
         return [Marker()]
 
 
+class Instructed(AgentMiddleware):
+    """As the subscription route's middleware does, changes where the instructions go before the model; the script model
+    still needs them in a system message, so here they are only marked as moved."""
+
+    async def awrap_model_call(self, request, handler):
+        SEEN.append(request.system_message.text)
+        return await handler(request.override(system_message=SystemMessage(f"moved: {request.system_message.text}")))
+
+
+class RoutedProvider(ScriptProvider):
+    name = "routed"
+
+    def chat_model(self, model: str, settings):
+        return ScriptChatModel(directory=Path(self.directory))
+
+    def middleware(self, settings) -> list:
+        return [Instructed()]
+
+
 register("model_provider", "caching")(CachingProvider())
+register("model_provider", "routed")(RoutedProvider())
 
 
 @pytest.mark.feature("F13")
@@ -54,3 +76,13 @@ async def test_the_providers_cache_middleware_wraps_each_model_call_and_its_coun
 async def test_a_provider_with_no_cache_middleware_runs_the_same_node(harness):
     outcome = await harness({"lookup": [LOOKUP, EXIT]}).nodes.run("lookup", {"name": "alpha"})
     assert outcome.exit == "done"
+
+
+@pytest.mark.feature("F13")
+async def test_the_providers_middleware_is_nearest_the_model_so_the_request_is_reported_as_the_node_built_it(harness):   # CTX-6
+    SEEN.clear()
+    h = harness({"lookup": [LOOKUP, EXIT]}, delivery={"model": "routed:any-model"})
+    outcome = await h.nodes.run("lookup", {"name": "alpha"})
+    assert outcome.exit == "done"
+    reported = [e.parts[0].text for e in h.events.record() if isinstance(e, ModelRequested)]
+    assert SEEN[0] and reported == SEEN   # each request's instructions, reported before the provider moved them
