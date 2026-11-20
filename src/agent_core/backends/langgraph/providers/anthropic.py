@@ -16,6 +16,10 @@ name = "anthropic"
 packages = ("langchain_anthropic", "anthropic")
 
 
+def check(settings: LangGraphSettings) -> None:
+    return None   # nothing to check before the run: CREDENTIAL=account is refused at the node run (E5, CRED-17)
+
+
 def chat_model(model: str, settings: LangGraphSettings) -> BaseChatModel:
     return init_chat_model(f"anthropic:{model}", max_tokens=settings.MAX_TOKENS, max_retries=0)   # the retry middleware is the one owner (MOD-6)
 

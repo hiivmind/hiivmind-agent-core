@@ -30,6 +30,7 @@ anthropic = [
 openai = [
     "langchain-openai>=1,<2",
     "openai>=2,<3",
+    "mountainash-auth-openai",   # CREDENTIAL=account: Sign in with ChatGPT (backlog 32)
 ]
 
 [dependency-groups]
@@ -46,6 +47,14 @@ include = ["src/agent_core/**/*.py", "src/agent_core/assets/*.md", "src/agent_co
 [tool.uv.sources]
 agent-tools = { workspace = true }
 mountainash-settings = { git = "ssh://git@github.com/mountainash-io/mountainash-settings.git", rev = "7a4b43bf4789b43a808ca1520012fc413d221e64" }
+mountainash-auth-openai = { git = "ssh://git@github.com/mountainash-io/mountainash-auth-openai.git", rev = "01ea70a946541ea68d0b3c43b4f2e1592ffd5aaa" }
+
+[tool.uv]
+# mountainash-auth-openai names its siblings by path in its own sources; pin them here as the core pins its settings.
+override-dependencies = [
+    "mountainash-auth-client @ git+ssh://git@github.com/mountainash-io/mountainash-auth-client.git@009d7ed51c17632e916f9530a7adcb4e4120788f",
+    "mountainash-settings @ git+ssh://git@github.com/mountainash-io/mountainash-settings.git@7a4b43bf4789b43a808ca1520012fc413d221e64",
+]
 
 [tool.uv.workspace]
 members = ["packages/*"]

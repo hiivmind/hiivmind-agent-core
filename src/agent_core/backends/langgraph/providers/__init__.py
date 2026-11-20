@@ -22,6 +22,7 @@ class ProviderModule(Protocol):
     name: str                                   # "anthropic"
     packages: tuple[str, ...]                   # importable names its integration needs: ("langchain_anthropic", "anthropic")
 
+    def check(self, settings: LangGraphSettings) -> None: ...   # raises RunCannotStart for settings it cannot run on
     def chat_model(self, model: str, settings: LangGraphSettings) -> BaseChatModel: ...   # max_retries=0 (MOD-6)
     def classify(self, error: BaseException) -> Literal["passes", "will not pass", "other"]: ...
     def refusal(self, error: BaseException) -> str: ...      # the text of a refusal that will not pass (MOD-5)

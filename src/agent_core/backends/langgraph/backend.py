@@ -35,6 +35,9 @@ class LangGraphBackend:
     def __init__(self, settings: LangGraphSettings):
         self._settings = settings
         self._provider, self._model = provider_module(settings.MODEL)   # a run that cannot start is found now (MOD-3)
+        check = getattr(self._provider, "check", None)   # a registered provider may have none
+        if check is not None:
+            check(settings)   # the provider's own startup check of its settings (credentials design §4.2)
         self._savers: dict[Path, AsyncSqliteSaver] = {}   # one checkpointer for each run directory, opened when first used
         self._open = AsyncExitStack()
         self._opening = asyncio.Lock()

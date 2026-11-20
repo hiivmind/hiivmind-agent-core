@@ -17,6 +17,10 @@ packages = ("langchain_openai", "openai")
 GLOSS = {"insufficient_quota": "no credit"}
 
 
+def check(settings: LangGraphSettings) -> None:
+    return None
+
+
 def chat_model(model: str, settings: LangGraphSettings) -> BaseChatModel:
     return init_chat_model(f"openai:{model}", max_tokens=settings.MAX_TOKENS, max_retries=0)   # the retry middleware is the one owner (MOD-6)
 

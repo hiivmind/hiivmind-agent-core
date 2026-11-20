@@ -229,3 +229,28 @@ def test_the_package_still_exposes_open_and_its_names_lazily():
     )
     done = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
     assert done.returncode == 0, done.stderr[-1000:]
+
+
+PROVIDER_DIR = PKG / "backends" / "langgraph" / "providers"
+
+
+def test_only_the_openai_provider_imports_the_sign_in_package():  # CRED-16
+    for file in sorted(PKG.rglob("*.py")):
+        if file != PROVIDER_DIR / "openai.py":
+            assert "mountainash_auth_openai" not in top(file), file
+
+
+def reads_credential(source: str) -> bool:
+    return any(isinstance(n, ast.Attribute) and n.attr == "CREDENTIAL" for n in ast.walk(ast.parse(source)))
+
+
+def test_only_provider_modules_read_the_credential():  # CRED-16
+    allowed = {PROVIDER_DIR / "openai.py", PROVIDER_DIR / "anthropic.py"}
+    for file in sorted(PKG.rglob("*.py")):
+        if file not in allowed:
+            assert not reads_credential(file.read_text()), file
+
+
+def test_the_credential_gate_sees_an_attribute_read():
+    assert reads_credential("settings.CREDENTIAL == 'account'")
+    assert not reads_credential("CREDENTIAL: str = 'env'")
