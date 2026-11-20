@@ -17,7 +17,7 @@ def status_error(cls, status, code=None):
     return cls("said no", response=httpx.Response(status, request=REQUEST), body=body)
 
 
-ENV = LangGraphSettings(MODEL="openai:gpt-6-luna")
+ENV = LangGraphSettings(MODEL="openai:gpt-6-luna", CREDENTIAL="env")   # named: the shell may export the setting
 ACCOUNT = LangGraphSettings(MODEL="openai:gpt-6-luna", CREDENTIAL="account")
 
 
@@ -84,7 +84,7 @@ def test_an_env_run_has_no_middleware_and_does_not_report_cache_writes():
 
 def test_the_client_does_not_retry_and_the_reply_limit_is_the_setting(monkeypatch):    # MOD-6
     monkeypatch.setenv("OPENAI_API_KEY", "not-used")
-    model = module.chat_model("gpt-6-luna", LangGraphSettings(MODEL="openai:gpt-6-luna", MAX_RETRIES=8, MAX_TOKENS=1234))
+    model = module.chat_model("gpt-6-luna", LangGraphSettings(MODEL="openai:gpt-6-luna", CREDENTIAL="env", MAX_RETRIES=8, MAX_TOKENS=1234))
     assert model.max_retries == 0
     assert model.max_tokens == 1234
 
@@ -118,7 +118,7 @@ def accounts(monkeypatch):
 
 def test_env_builds_the_client_as_before(accounts, monkeypatch):    # CRED-14
     monkeypatch.setenv("OPENAI_API_KEY", "not-used")
-    settings = LangGraphSettings(MODEL="openai:gpt-6-luna", MAX_TOKENS=1234)
+    settings = LangGraphSettings(MODEL="openai:gpt-6-luna", CREDENTIAL="env", MAX_TOKENS=1234)
     model = module.chat_model("gpt-6-luna", settings)
     assert (model.max_tokens, model.max_retries) == (1234, 0)
     assert accounts.opened == []

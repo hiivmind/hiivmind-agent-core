@@ -40,7 +40,7 @@ def test_what_the_response_does_not_report_is_none_not_zero():
     assert module.usage(answer({"cache_read": 3, "cache_creation": 4})) == Usage(10, 3, 4)
 
 
-SETTINGS = LangGraphSettings(MODEL="anthropic:claude-haiku-5-5")
+SETTINGS = LangGraphSettings(MODEL="anthropic:claude-haiku-5-5", CREDENTIAL="env")   # named: the shell may export the setting
 
 
 @pytest.mark.parametrize("cls, status, kind", [
@@ -68,7 +68,7 @@ def test_the_middleware_is_anthropics_prompt_caching():
 
 def test_the_client_does_not_retry_and_the_reply_limit_is_the_setting(monkeypatch):    # MOD-6
     monkeypatch.setenv("ANTHROPIC_API_KEY", "not-used")
-    model = module.chat_model("claude-haiku-5-5", LangGraphSettings(MODEL="anthropic:claude-haiku-5-5", MAX_RETRIES=8, MAX_TOKENS=1234))
+    model = module.chat_model("claude-haiku-5-5", LangGraphSettings(MODEL="anthropic:claude-haiku-5-5", CREDENTIAL="env", MAX_RETRIES=8, MAX_TOKENS=1234))
     assert (model.max_retries, model.max_tokens) == (0, 1234)
 
 
@@ -104,5 +104,5 @@ def test_account_on_anthropic_never_imports_the_sign_in_package():    # CRED-16,
 
 def test_env_is_unchanged_for_anthropic(monkeypatch):    # CRED-14
     monkeypatch.setenv("ANTHROPIC_API_KEY", "not-used")
-    model = module.chat_model("claude-haiku-5-5", LangGraphSettings(MODEL="anthropic:claude-haiku-5-5"))
+    model = module.chat_model("claude-haiku-5-5", LangGraphSettings(MODEL="anthropic:claude-haiku-5-5", CREDENTIAL="env"))
     assert (model.max_retries, model.max_tokens) == (0, 16000)
