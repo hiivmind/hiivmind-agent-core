@@ -1,4 +1,4 @@
-"""A real `harness.nodes.run` of the toy `lookup` node on Haiku: F1 to F5 and F11 with a real model."""
+"""A real `harness.nodes.run` of the toy `lookup` node on the model-test model: F1 to F5 and F11 with a real model."""
 
 import pytest
 
@@ -14,7 +14,9 @@ async def test_the_lookup_node_ends_done_with_its_outputs(harness, wire):
     assert (outcome.exit, outcome.reason) == ("done", None)
     assert outcome.outputs == {"revision": "r2"}
     [note] = outcome.notes
-    assert note.node == "lookup" and note.model_calls == len(wire.requests) >= 2
+    assert note.node == "lookup" and note.model_calls >= 2
+    if wire is not None:   # Anthropic: every model call is one request on the wire
+        assert note.model_calls == len(wire.requests)
     events = h.events.record()
     returned = [(e.call.name, e.error) for e in events if isinstance(e, ToolReturned)]
     assert returned[0] == ("lookup_revision", False) and returned[-1] == ("exit", False)

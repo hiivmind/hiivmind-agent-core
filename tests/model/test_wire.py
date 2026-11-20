@@ -1,12 +1,19 @@
 """What the provider is sent, with a real model: the Anthropic request bodies against what the facade says it sent."""
 
+import os
 import time
 
 import pytest
 
 from agent_core.contracts.events import ModelRequested, ModelResponded
 
-pytestmark = pytest.mark.model
+pytestmark = [
+    pytest.mark.model,
+    pytest.mark.skipif(
+        not (os.environ.get("AGENT_CORE_LANGGRAPH_MODEL") or "anthropic:").startswith("anthropic:"),
+        reason="reads Anthropic's wire; another provider's has no reader here",
+    ),
+]
 
 
 def requested(h) -> list[ModelRequested]:
