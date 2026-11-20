@@ -103,6 +103,14 @@ With `account`, the client is the subscription route's: the Responses API, strea
 
 The `openai` extra takes `mountainash-auth-openai` and `mountainash-auth-client` by git revision; a project that depends on agent-core with that extra repeats them as `agent-core` does (`[tool.uv.sources]` for `mountainash-auth-openai`, `[tool.uv] override-dependencies` for its two siblings).
 
+### Live runs on the ChatGPT plan
+
+2026-11-21, `openai:gpt-6-luna`, `CREDENTIAL=account`, the account `069a3ecb…` signed in for `hiivmind-agent-core` with plan usage enabled.
+
+- **The model tests** (`uv run pytest tests/model -m model`): 7 passed, 5 skipped (the wire tests read Anthropic's transport), 1 failed. The one that fails is `test_a_precondition_written_in_the_procedure_that_is_unmet_fails_the_node`: luna mostly calls `lookup_revision` before it exits `failed`, against "do nothing more" (2 passes in 11 runs; 0 in 6 with the instructions as a `developer` message, so the way they are sent is not the cause). Recorded as luna's result (owner, 2026-11-21). The same tests on `anthropic:claude-haiku-5-5` with its key: 13 passed.
+- **A corpus job** (hiivmind-corpus-agent, `status` on a scratch clone of the Polars corpus, `PUSH=false`, `--no-ask`; the `openai` extra installed into its environment by hand, as its own dependency takes `agent-core[langgraph,anthropic]`): run `status-20261120T214748Z-c2dc7b` ended `done`, exit 0, with 4 model calls. Step `status` → `stale`: source `polars` `behind`, `stale_count` 37, `refresh_needed` true. The clone was unchanged.
+- **Two route facts were found by these runs** and are in `ROUTE` of `mountainash-auth-openai`: a system message is refused (`400 System messages are not allowed`), and a tool sent without `strict` is strict, so the model filled both `head` and `tail` of the filesystem server's `read_text_file` and the server refused the call.
+
 ## `agent-core job`
 
 `agent-core job <instance.yaml> <sequence>` runs a sequence of the topology. A name that is not a sequence exits 2, listing the sequences.
