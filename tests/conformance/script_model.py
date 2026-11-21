@@ -148,13 +148,13 @@ class ScriptProvider:
     def chat_model(self, model: str, settings) -> BaseChatModel:
         return ScriptChatModel(directory=Path(model))
 
-    def classify(self, error: BaseException) -> Literal["passes", "will not pass", "other"]:
+    def classify(self, error: BaseException, settings) -> Literal["passes", "will not pass", "other"]:
         return error.kind if isinstance(error, ScriptRefusal) else "other"
 
-    def refusal(self, error: BaseException) -> str:
+    def refusal(self, error: BaseException, settings) -> str:
         return f"the provider refused: {error}"
 
-    def cache_middleware(self) -> list:
+    def middleware(self, settings) -> list:
         return []
 
     def usage(self, message: AIMessage) -> Usage:

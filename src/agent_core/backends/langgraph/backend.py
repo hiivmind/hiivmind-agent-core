@@ -35,6 +35,9 @@ class LangGraphBackend:
     def __init__(self, settings: LangGraphSettings):
         self._settings = settings
         self._provider, self._model = provider_module(settings.MODEL)   # a run that cannot start is found now (MOD-3)
+        check = getattr(self._provider, "check", None)   # a registered provider may have none
+        if check is not None:
+            check(settings)   # the provider's own startup check of its settings (credentials design §4.2)
         self._savers: dict[Path, AsyncSqliteSaver] = {}   # one checkpointer for each run directory, opened when first used
         self._open = AsyncExitStack()
         self._opening = asyncio.Lock()
@@ -79,8 +82,9 @@ class LangGraphBackend:
             module.chat_model(name, self._settings),
             tools=sdk_tools(policy, unit.tools),
             system_prompt=policy.instructions,
-            # The retry owner is outside the hook: each attempt sent is a request the hook reports (CTX-6, Q4).
-            middleware=[*module.cache_middleware(), self._retries(), PolicyHook(policy, module, unit.events)],
+            # The retry owner is outside the hook: each attempt sent is a request the hook reports (CTX-6, Q4). The
+            # provider's middleware is inside it, nearest the model: the hook reports the request as the node built it.
+            middleware=[self._retries(), PolicyHook(policy, module, unit.events), *module.middleware(self._settings)],
             checkpointer=checkpointer,
         )
         messages = _render(policy.handover)
@@ -101,19 +105,19 @@ class LangGraphBackend:
         return policy.finish(state["node"], said)
     def _retries(self) -> ModelRetryMiddleware:
         """The one retry owner (MOD-6): the client's own retries are off. What it gives up on is raised as it was."""
-        module = self._provider
+        module, settings = self._provider, self._settings
         return ModelRetryMiddleware(
-            max_retries=self._settings.MAX_RETRIES, retry_on=lambda e: module.classify(e) == "passes", on_failure="error",
+            max_retries=settings.MAX_RETRIES, retry_on=lambda e: module.classify(e, settings) == "passes", on_failure="error",
         )
 
     def _mapped(self, error: Exception) -> Exception:
         """What the retry middleware raised, as the core reads it: a refusal that passes (RTY-2a) or one that will not
-        (MOD-4); any other error is its own."""
-        match self._provider.classify(error):
+        (MOD-4); any other error is its own. The provider reads its errors against this backend's settings."""
+        match self._provider.classify(error, self._settings):
             case "passes":
                 return ProviderUnavailable(f"{type(error).__name__}: {error}")
             case "will not pass":
-                return ProviderRefused(self._provider.refusal(error))
+                return ProviderRefused(self._provider.refusal(error, self._settings))
             case _:
                 return error
 

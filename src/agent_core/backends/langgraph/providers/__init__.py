@@ -1,6 +1,6 @@
 """Provider modules: what differs between model providers (architecture §4.7).
 
-A provider module builds the chat model, classifies the errors of its SDK, gives its cache middleware and maps its
+A provider module builds the chat model, classifies the errors of its SDK, gives its middleware and maps its
 usage. A provider SDK is imported only by its own module, and a module is imported only when `MODEL` names it.
 """
 
@@ -22,10 +22,11 @@ class ProviderModule(Protocol):
     name: str                                   # "anthropic"
     packages: tuple[str, ...]                   # importable names its integration needs: ("langchain_anthropic", "anthropic")
 
+    def check(self, settings: LangGraphSettings) -> None: ...   # raises RunCannotStart for settings it cannot run on
     def chat_model(self, model: str, settings: LangGraphSettings) -> BaseChatModel: ...   # max_retries=0 (MOD-6)
-    def classify(self, error: BaseException) -> Literal["passes", "will not pass", "other"]: ...
-    def refusal(self, error: BaseException) -> str: ...      # the text of a refusal that will not pass (MOD-5)
-    def cache_middleware(self) -> list[AgentMiddleware]: ...
+    def classify(self, error: BaseException, settings: LangGraphSettings) -> Literal["passes", "will not pass", "other"]: ...
+    def refusal(self, error: BaseException, settings: LangGraphSettings) -> str: ...      # the text of a refusal that will not pass (MOD-5)
+    def middleware(self, settings: LangGraphSettings) -> list[AgentMiddleware]: ...   # nearest the model, inside the hook
     def usage(self, message: AIMessage) -> Usage: ...
 
 

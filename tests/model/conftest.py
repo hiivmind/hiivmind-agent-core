@@ -1,11 +1,13 @@
-"""What the model tests run on: the facade on `backend="langgraph"` with `anthropic:claude-haiku-5-5`, and a record of
-the requests at the Anthropic SDK's HTTP client.
+"""What the model tests run on: the facade on `backend="langgraph"` with the model the shell's
+`AGENT_CORE_LANGGRAPH_MODEL` names, else `anthropic:claude-haiku-5-5`, and, on Anthropic, a record of the requests at
+the Anthropic SDK's HTTP client. `AGENT_CORE_LANGGRAPH_CREDENTIAL` passes through from the shell.
 
 Each test here carries `@pytest.mark.model` (set once, by `pytestmark`, in each file). Keys come from the shell that
 starts pytest. The suite adds up what the runs were sent and what was read from cache, and prints that at the end.
 """
 
 import json
+import os
 from pathlib import Path
 
 import pytest
@@ -13,7 +15,8 @@ import pytest
 import agent_core
 from agent_core.contracts.events import ModelResponded
 
-MODEL = "anthropic:claude-haiku-5-5"
+MODEL = os.environ.get("AGENT_CORE_LANGGRAPH_MODEL") or "anthropic:claude-haiku-5-5"
+ANTHROPIC = MODEL.startswith("anthropic:")   # the wire record reads Anthropic's transport only
 INSTANCE = Path(__file__).resolve().parent / "instance"
 TOTALS = {"requests": 0, "sent": 0, "cache_read": 0, "cache_written": 0}
 
@@ -55,6 +58,9 @@ class Wire:
 
 @pytest.fixture
 def wire(monkeypatch):
+    """The record of Anthropic's requests; `None` on another provider, whose wire has no reader here."""
+    if not ANTHROPIC:
+        return None
     import anthropic._base_client as base
 
     # The SDK sends through `httpx2` in this environment, not `httpx`; patch the client class the SDK itself imported.

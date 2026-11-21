@@ -13,6 +13,10 @@ members = [
     "agent-core",
     "agent-tools",
 ]
+overrides = [
+    { name = "mountainash-auth-client", git = "ssh://git@github.com/mountainash-io/mountainash-auth-client.git?rev=009d7ed51c17632e916f9530a7adcb4e4120788f" },
+    { name = "mountainash-settings", git = "ssh://git@github.com/mountainash-io/mountainash-settings.git?rev=7a4b43bf4789b43a808ca1520012fc413d221e64" },
+]
 
 [[package]]
 name = "agent-core"
@@ -40,6 +44,7 @@ langgraph = [
 ]
 openai = [
     { name = "langchain-openai" },
+    { name = "mountainash-auth-openai" },
     { name = "openai" },
 ]
 
@@ -63,6 +68,7 @@ requires-dist = [
     { name = "langgraph", marker = "extra == 'langgraph'", specifier = ">=1.2,<2" },
     { name = "langgraph-checkpoint-sqlite", marker = "extra == 'langgraph'", specifier = ">=3,<4" },
     { name = "mcp", specifier = ">=1.30,<2" },
+    { name = "mountainash-auth-openai", marker = "extra == 'openai'", git = "ssh://git@github.com/mountainash-io/mountainash-auth-openai.git?rev=16b378a893b3560556592147ed87bc927b204c93" },
     { name = "mountainash-settings", git = "ssh://git@github.com/mountainash-io/mountainash-settings.git?rev=7a4b43bf4789b43a808ca1520012fc413d221e64" },
     { name = "openai", marker = "extra == 'openai'", specifier = ">=2,<3" },
     { name = "pydantic", specifier = ">=2" },
@@ -1042,6 +1048,29 @@ wheels = [
 ]
 
 [[package]]
+name = "mountainash-auth-client"
+version = "0.1.0"
+source = { git = "ssh://git@github.com/mountainash-io/mountainash-auth-client.git?rev=009d7ed51c17632e916f9530a7adcb4e4120788f#009d7ed51c17632e916f9530a7adcb4e4120788f" }
+dependencies = [
+    { name = "httpx" },
+    { name = "mountainash-settings" },
+    { name = "pydantic" },
+    { name = "strenum" },
+]
+
+[[package]]
+name = "mountainash-auth-openai"
+version = "0.1.0"
+source = { git = "ssh://git@github.com/mountainash-io/mountainash-auth-openai.git?rev=16b378a893b3560556592147ed87bc927b204c93#16b378a893b3560556592147ed87bc927b204c93" }
+dependencies = [
+    { name = "httpx" },
+    { name = "mountainash-auth-client" },
+    { name = "mountainash-settings" },
+    { name = "pydantic" },
+    { name = "pyjwt", extra = ["crypto"] },
+]
+
+[[package]]
 name = "mountainash-settings"
 version = "0.1.0"
 source = { git = "ssh://git@github.com/mountainash-io/mountainash-settings.git?rev=7a4b43bf4789b43a808ca1520012fc413d221e64#7a4b43bf4789b43a808ca1520012fc413d221e64" }
@@ -1945,6 +1974,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/48/bb/3d8757f21e9a53d9035c9eb039a777047139a16bfdbedfc7a58241c3d914/starlette-1.10.0.tar.gz", hash = "sha256:b8399098d4c1e3522734f7235dc79b1fc967f96cf139c81e0fa30479e0685f9b", size = 2734356, upload-time = "2026-10-24T15:04:12.342Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/88/2e/947cfe02def9371c07cd5bf5b6b61c829e9aecb9904db02a66cfafbc1eec/starlette-1.10.0-py3-none-any.whl", hash = "sha256:478c0ab3b4ced6e82719849c118fa406f0278a3499c1a898cd15cd31bdc38ce4", size = 80571, upload-time = "2026-10-24T15:04:10.371Z" },
+]
+
+[[package]]
+name = "strenum"
+version = "0.5.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/80/c6/08eb36e25f318037c93ae16f75e515e95ebf2801e42428d10b7ff332f9dd/strenum-0.5.0.tar.gz", hash = "sha256:9c50a5ce647c0a625ac25c1b719039e745466b6a04bd001aee6376381d8cdce7", size = 148156, upload-time = "2026-10-31T20:37:54.911Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/04/94/598975013306c83df1820bf6cf7424da43c98eff190d528b733be615e8c6/strenum-0.5.0-py3-none-any.whl", hash = "sha256:f23a35daa03c948885d616463f75ebb0f179cb13acd17c3ac3b2394bfc343967", size = 9101, upload-time = "2026-10-31T20:37:53.712Z" },
 ]
 
 [[package]]

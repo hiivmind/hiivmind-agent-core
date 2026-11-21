@@ -60,3 +60,21 @@ def test_a_chosen_provider_whose_package_is_installed_is_resolved_lazily():
         "anthropic": "agent_core.backends.langgraph.providers.anthropic",
         "openai": "agent_core.backends.langgraph.providers.openai",
     }
+
+
+E6 = "CREDENTIAL=account needs mountainash-auth-openai: install agent-core with the extra `openai`."
+
+
+def test_account_without_the_package_stops_the_run_before_it_starts(monkeypatch):    # E6, CRED-18
+    import importlib.util
+
+    from agent_core.backends.langgraph.backend import LangGraphBackend
+    from agent_core.backends.langgraph.settings import LangGraphSettings
+    from agent_core.contracts.errors import RunCannotStart
+
+    real = importlib.util.find_spec
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name, *a: None if name == "mountainash_auth_openai" else real(name, *a))
+    with pytest.raises(RunCannotStart) as stopped:
+        LangGraphBackend(LangGraphSettings(MODEL="openai:gpt-6-luna", CREDENTIAL="account"))
+    assert str(stopped.value) == E6
+    LangGraphBackend(LangGraphSettings(MODEL="openai:gpt-6-luna", CREDENTIAL="env"))   # env needs no sign-in package
