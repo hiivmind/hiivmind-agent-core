@@ -19,10 +19,28 @@ def test_function_tools_are_named_as_declared_with_the_docstring_for_description
     spec = tools["count_words"].spec
     assert spec.name == "count_words" and spec.description == "Count the words in a text."
     assert spec.schema == {
-        "properties": {"text": {"title": "Text", "type": "string"}},
+        "properties": {"text": {"type": "string"}},
         "required": ["text"],
         "type": "object",
     }
+
+
+def test_a_function_schema_has_no_titles():                                              # Q2
+    def f(text: str, count: int = 2):
+        """Doc."""
+
+    assert describe(f).spec.schema == {
+        "type": "object",
+        "properties": {"text": {"type": "string"}, "count": {"type": "integer", "default": 2}},
+        "required": ["text"],
+    }
+
+
+def test_a_parameter_named_title_keeps_its_property():                                   # Q2
+    def g(title: str):
+        """Doc."""
+
+    assert describe(g).spec.schema["properties"] == {"title": {"type": "string"}}
 
 
 def test_function_without_a_docstring_is_described_by_its_name():
