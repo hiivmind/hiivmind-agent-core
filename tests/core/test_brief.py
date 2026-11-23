@@ -1,8 +1,14 @@
+import dataclasses
+import json
+from pathlib import Path
+
 import pytest
 
 from agent_core.contracts.values import ToolSpec
 from agent_core.core.brief import JOB_VERBS, VERB_SPECS, make_brief
 from support import FolderSource, load
+
+GOLDENS = Path(__file__).parent / "goldens"
 
 FUNCTION = ToolSpec("lookup", "Look a key up.", {"type": "object"})
 SERVER = ToolSpec("tools__lookup", "Look a key up.", {"type": "object"})
@@ -13,6 +19,14 @@ def brief(instance, name="plain", *, values=None, tools=None, inputs=None):
         instance, instance.nodes[name], inputs=inputs or {}, session={}, values={} if values is None else values,
         settings=None, resources=FolderSource(instance.root), tools={"tools__lookup": SERVER} if tools is None else tools,
     )
+
+
+def test_a_jobs_instructions_are_those_of_270b974(instance):                               # CD-4
+    assert brief(instance)[0] == (GOLDENS / "plain_instructions.txt").read_text()
+
+
+def test_a_jobs_verb_schemas_are_those_of_270b974(instance):                               # CD-4
+    assert [dataclasses.asdict(t) for t in brief(instance)[1]] == json.loads((GOLDENS / "job_verbs.json").read_text())
 
 
 def test_the_job_verbs_and_their_specs():
