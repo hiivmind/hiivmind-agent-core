@@ -75,7 +75,8 @@ async def play(tmp_path, steps):
         Counting(directory=tmp_path), tools=sdk_tools(policy, None), system_prompt=policy.instructions,
         middleware=[PolicyHook(policy, module, events)],
     )
-    state = await agent.ainvoke({"messages": [HumanMessage("go")], "node": policy.initial()}, config={"recursion_limit": 30})
+    config = {"recursion_limit": 30, "metadata": {"agent_core_node": "n"}}   # as the backend's run config names it (CD-13)
+    state = await agent.ainvoke({"messages": [HumanMessage("go")], "node": policy.initial()}, config=config)
     return policy, events, state
 
 

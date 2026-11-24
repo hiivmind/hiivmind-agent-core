@@ -90,7 +90,10 @@ class LangGraphBackend:
         messages = _render(policy.handover)
         if policy.opening:   # a run started again ends its hand-over with a call and its result: no opening then
             messages.append(HumanMessage(policy.opening))
-        config = {"recursion_limit": self._settings.RECURSION_LIMIT, "configurable": configurable}
+        config = {
+            "recursion_limit": self._settings.RECURSION_LIMIT, "configurable": configurable,
+            "metadata": {"agent_core_node": unit.name},   # the node that is running, for a model that needs it (CD-13)
+        }
         saver = checkpointer if isinstance(checkpointer, AsyncSqliteSaver) else None
         try:
             payload = await self._input(agent, config, {"messages": messages, "node": policy.initial()}, unit.intent, saver)

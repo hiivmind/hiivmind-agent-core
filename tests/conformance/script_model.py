@@ -9,7 +9,7 @@ step forms only this model reads:
     {"raise": ..., "once": true}                          the same, in the first conversation of the node that reaches it
     {"crash": true}                                       raises SystemExit, once, whatever the process
 
-The model finds the node by the line of the brief that names it. It finds its place in the script by progress that is
+The model finds the node in the run config's `metadata["agent_core_node"]`, which the backend sets. It finds its place in the script by progress that is
 scoped to ONE CONVERSATION: the conversation's key is the invocation config's `thread_id` (`invoke(..., config=...)` or the graph's; when there is one) with the id, or
 else the text, of the first message that is not a system message. The place is
 
@@ -27,7 +27,6 @@ that kept the same thread id and the same first message would continue where the
 import hashlib
 from contextvars import ContextVar
 import json
-import re
 from pathlib import Path
 from typing import Any, Literal
 
@@ -40,7 +39,6 @@ from agent_core.contracts.registry import register
 from agent_core.contracts.values import Usage
 
 _EXPLICIT: ContextVar = ContextVar("script_model_config", default=None)
-PROCEDURE = re.compile(r"^# Procedure of the node that is running: `([^`]+)`", re.MULTILINE)
 
 
 class ScriptRefusal(Exception):
@@ -59,13 +57,15 @@ class ScriptChatModel(BaseChatModel):
     def bind_tools(self, tools, **kwargs: Any):
         return self   # the script says which calls are made; the tools it is offered do not change it
 
-    def _node(self, messages: list[BaseMessage]) -> str:
-        for message in messages:
-            if isinstance(message, SystemMessage):
-                found = PROCEDURE.search(message.text)
-                if found:
-                    return found.group(1)
-        raise ValueError("no message of the conversation names the node that is running")
+    @staticmethod
+    def _config() -> dict:
+        return _EXPLICIT.get() or var_child_runnable_config.get() or {}   # inside LangGraph the context variable has it
+
+    def _node(self) -> str:
+        node = (self._config().get("metadata") or {}).get("agent_core_node")
+        if node is None:
+            raise ValueError("the run config has no metadata `agent_core_node` naming the node that is running")
+        return node
 
     def invoke(self, input, config=None, **kwargs):
         token = _EXPLICIT.set(config)   # the config of this call: the base class does not install it in the context variable
@@ -81,10 +81,9 @@ class ScriptChatModel(BaseChatModel):
         finally:
             _EXPLICIT.reset(token)
 
-    @staticmethod
-    def _key(messages: list[BaseMessage]) -> str:
-        config = _EXPLICIT.get() or var_child_runnable_config.get() or {}   # inside LangGraph the context variable has it
-        thread = (config.get("configurable") or {}).get("thread_id", "")
+    @classmethod
+    def _key(cls, messages: list[BaseMessage]) -> str:
+        thread = (cls._config().get("configurable") or {}).get("thread_id", "")
         first = next((m for m in messages if not isinstance(m, SystemMessage)), None)
         said = "" if first is None else (first.id or first.text)
         return hashlib.sha1(f"{thread}\0{said}".encode()).hexdigest()[:12]
@@ -97,7 +96,7 @@ class ScriptChatModel(BaseChatModel):
         return int(file.read_text()) if file.exists() else 0
 
     def _generate(self, messages: list[BaseMessage], stop=None, run_manager=None, **kwargs: Any) -> ChatResult:
-        node = self._node(messages)
+        node = self._node()
         key = self._key(messages)
         steps = json.loads((self.directory / f"{node}.json").read_text())
         answered = sum(
