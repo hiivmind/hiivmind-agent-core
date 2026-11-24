@@ -32,7 +32,7 @@ from agent_core.contracts.policy import NodeState, Policy
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.topology import Check, FragmentDef, NodeContract
 from agent_core.contracts.unit import DeclaredTools, Intent, Unit, UnitResult
-from agent_core.contracts.values import Outcome
+from agent_core.contracts.values import FAILED, HarnessReason, Outcome
 from agent_core.contracts.walk import WalkResult
 from agent_core.core.brief import make_brief
 from agent_core.core.checks import unknown_inputs, unmet_check
@@ -101,10 +101,10 @@ class _Recorded:
             self._run.failures.append({"node": unit.name, "error": f"{type(e).__name__}: {e}"})
             raise
         for step in result.steps:   # a failed inner step is a failure of the run, whether or not the fragment recovered
-            if step["outcome"] == "failed":
-                inner = UnitResult("failed", step.get("outputs", {}), step.get("reason"), step.get("detail", {}))
+            if step["outcome"] == FAILED:
+                inner = UnitResult(FAILED, step.get("outputs", {}), step.get("reason"), step.get("detail", {}))
                 self._run.failures.append(failure(f"{unit.name}/{step['name']}", inner))
-        if result.exit == "failed":
+        if result.exit == FAILED:
             self._run.failures.append(failure(unit.name, result))
         return result
 
@@ -204,7 +204,7 @@ class _Run:
             if unmet is not None and "outcome" in unmet:  # NODE-13a: the check's outcome, and no model is called
                 return UnitResult(unmet["outcome"], {}, detail={"message": unmet["message"]})
             if unmet is not None:  # NODE-13
-                return UnitResult("failed", {}, reason="precondition_unmet", detail={"message": unmet["message"]})
+                return UnitResult(FAILED, {}, reason=HarnessReason.PRECONDITION_UNMET, detail={"message": unmet["message"]})
             for key, value in writes.items():  # what a met check wrote counts as recorded when the node starts (NODE-11)
                 _record(state, contract, key, value)
             strategy = h.lookup("context", "none")()  # a job's node gets its hand-over from the first strategy
@@ -217,7 +217,7 @@ class _Run:
                 settings=self.settings, resources=self.resources, tools=self.declared.specs,
             )
         except TemplateError as e:  # TPL-2b, TPL-6b
-            return UnitResult("failed", {}, reason="unknown_placeholder", detail={"detail": str(e)})
+            return UnitResult(FAILED, {}, reason=HarnessReason.UNKNOWN_PLACEHOLDER, detail={"detail": str(e)})
         h.hub.emit(NodeStarted(label, node, parts, tuple(spec.name for spec in offered)))
         return NodePolicy(
             found, label=label, instructions=instructions, tools=offered, handover=tuple(handover), opening=OPENING,

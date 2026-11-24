@@ -12,6 +12,7 @@ from agent_core.contracts.errors import ProviderRefused, ProviderUnavailable
 from agent_core.contracts.registry import register
 from agent_core.contracts.topology import END, FanOut, FragmentDef, Link, Step
 from agent_core.contracts.unit import UnitResult
+from agent_core.contracts.values import DONE, FAILED, HarnessReason
 from agent_core.contracts.walk import StepRef, WalkPort, WalkResult
 
 
@@ -29,7 +30,7 @@ def _no_transition(node: str, outcome: str) -> str:
 
 
 def _failed(reason: str) -> UnitResult:
-    return UnitResult("failed", {"reason": reason})
+    return UnitResult(FAILED, {"reason": reason})
 
 
 # how a walk ends: (end, the last outcome, the summary, whether a transition led to `end`)
@@ -156,7 +157,7 @@ class _Walk:
                 continue
             self.trail.append({"step": first + n - 1, "name": f"{node}[{n}]", "outcome": result.exit})
             self.results[first + n - 1] = result
-            if result.exit == "done":
+            if result.exit == DONE:
                 done.append(self._declared(node, result.outputs))
             elif result.exit != "stopped":
                 failures.append({"item": item, "outcome": result.exit, "reason": result.outputs.get("reason", result.reason)})
@@ -225,8 +226,8 @@ async def walk_fragment(port: WalkPort, fragment: FragmentDef, inputs: Mapping) 
     if end == "stopped":  # SEQ-7
         return UnitResult("stopped", outputs, steps=steps)
     if not clean:
-        return UnitResult("failed", outputs, reason=str(summary), steps=steps)
-    return UnitResult(outcome or "done", outputs, steps=steps)
+        return UnitResult(FAILED, outputs, reason=HarnessReason.NO_TRANSITION, detail={"message": str(summary)}, steps=steps)
+    return UnitResult(outcome or DONE, outputs, steps=steps)
 
 
 class Walking:

@@ -20,6 +20,7 @@ from langgraph.types import Send
 from agent_core.contracts.errors import ProviderRefused, ProviderUnavailable
 from agent_core.contracts.topology import END, FanOut, FragmentDef, Link, Step, Target
 from agent_core.contracts.unit import Intent, Unit, UnitResult
+from agent_core.contracts.values import DONE, FAILED, HarnessReason
 from agent_core.contracts.walk import RETRY_PAUSE
 from agent_core.helpers.walk import SequenceError
 
@@ -48,7 +49,7 @@ class FragmentState(TypedDict, total=False):
     results: Annotated[dict, _by_item]    # a fan-out's workers' results, by node and item number
     items: Annotated[dict, _merge]        # the lists tools computed, by the fan-out's node
     outcome: str | None                   # how the last step ended
-    ended: dict | None                    # {"end": "stopped"} or {"end": "failed", "reason": ...}
+    ended: dict | None                    # {"end": "stopped"} or {"end": "failed", "message": ...}
 
 
 def initial_state(fragment: FragmentDef, inputs: Mapping) -> FragmentState:
@@ -59,16 +60,16 @@ def initial_state(fragment: FragmentDef, inputs: Mapping) -> FragmentState:
 
 def fragment_result(fragment: FragmentDef, state: Mapping) -> UnitResult:
     """The fragment's exit is the last step's outcome (SEQ-10); a stop ends it `stopped` (SEQ-7); an outcome its
-    transitions have no row for ends it `failed`, with the reason the step gave."""
+    transitions have no row for ends it `failed` with `no_transition`, the message naming the step and the outcome."""
     steps = tuple(state["trail"])
     facts = state["facts"]
     outputs = {name: facts[name] for name in fragment.outputs if name in facts}
     ended = state["ended"]
     if ended is None:
-        return UnitResult(state["outcome"] or "done", outputs, steps=steps)
+        return UnitResult(state["outcome"] or DONE, outputs, steps=steps)
     if ended["end"] == "stopped":
         return UnitResult("stopped", outputs, steps=steps)
-    return UnitResult("failed", outputs, reason=ended["reason"], steps=steps)
+    return UnitResult(FAILED, outputs, reason=HarnessReason.NO_TRANSITION, detail={"message": ended["message"]}, steps=steps)
 
 
 def _record(result: UnitResult) -> dict:
@@ -172,7 +173,7 @@ class _Compiler:
         if outcome == "stopped":   # SEQ-7
             return {"end": "stopped"}
         if self.rows.get(source, {}).get(outcome) is None:   # SEQ-10
-            return {"end": "failed", "reason": f"`{source}` exited `{outcome}` and the sequence has no transition for it"}
+            return {"end": FAILED, "message": f"`{source}` exited `{outcome}` and the sequence has no transition for it"}
         return None
 
     def _step(self, name: str, mapping: Mapping[str, str], graph_id: str):
@@ -220,19 +221,19 @@ class _Compiler:
             try:
                 return await self.run(node, inputs, "start", f"{base}/1")
             except ProviderRefused as e:
-                return UnitResult("failed", {"reason": str(e)})
+                return UnitResult(FAILED, {"reason": str(e)})
             except ProviderUnavailable:
                 pass
             except Exception as e:
-                return UnitResult("failed", {"reason": f"{type(e).__name__}: {e}"})
+                return UnitResult(FAILED, {"reason": f"{type(e).__name__}: {e}"})
             await asyncio.sleep(RETRY_PAUSE)
             intent = "fresh"
         try:
             return await self.run(node, inputs, intent, second)
         except ProviderRefused as e:
-            return UnitResult("failed", {"reason": f"{e} (run twice)"})   # RTY-5: any error of the second run
+            return UnitResult(FAILED, {"reason": f"{e} (run twice)"})   # RTY-5: any error of the second run
         except Exception as e:
-            return UnitResult("failed", {"reason": f"{type(e).__name__}: {e} (run twice)"})
+            return UnitResult(FAILED, {"reason": f"{type(e).__name__}: {e} (run twice)"})
 
     def _join(self, spec: FanOut):
         node, into = spec.node, spec.into
@@ -246,7 +247,7 @@ class _Compiler:
                 if not record["ran"]:
                     continue
                 trail.append(_inner(f"{node}[{n}]", record))
-                if record["exit"] == "done":
+                if record["exit"] == DONE:
                     done.append(self._declared(node, record["outputs"]))
                 elif record["exit"] == "stopped":
                     stopped = True

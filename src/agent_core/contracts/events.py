@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-from .values import Message, ModelResponse, ToolCall
+from .values import HarnessReason, Message, ModelResponse, ToolCall
 
 
 @dataclass(frozen=True)
@@ -46,7 +46,7 @@ class NodeEnded:
     label: str
     node: str
     exit: str
-    reason: str | None
+    reason: HarnessReason | None
 
 
 Event = NodeStarted | ModelRequested | ModelResponded | ToolReturned | NodeEnded

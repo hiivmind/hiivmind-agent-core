@@ -19,7 +19,7 @@ from agent_core.contracts.policy import CallResult, Ending, NodeState, Review, S
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.tools import ToolSource
 from agent_core.contracts.unit import UnitResult
-from agent_core.contracts.values import Message, ModelResponse, ToolCall, ToolSpec
+from agent_core.contracts.values import DONE, FAILED, HarnessReason, Message, ModelResponse, ToolCall, ToolSpec
 from agent_core.core.checks import StateView, written
 from agent_core.core.functions import tool_schema
 from agent_core.core.instance import NodeDef
@@ -173,7 +173,7 @@ class NodePolicy:
     def finish(self, state: NodeState, said: str) -> UnitResult:
         ending = state["ending"]
         if ending is None:  # the model stopped without an exit (JOB-12)
-            result = UnitResult("failed", {}, reason="no_exit", detail={"said": said})
+            result = UnitResult(FAILED, {}, reason=HarnessReason.NO_EXIT, detail={"said": said})
         else:
             result = UnitResult(
                 ending["outcome"], ending["outputs"], reason=ending.get("reason"), detail=ending.get("detail") or {}
@@ -189,7 +189,7 @@ async def _ask(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
     question = args["question"]
     answer = await policy._person.ask(question, policy.label)
     if answer is None:  # nobody is there: the job ends and says what it needed (JOB-6)
-        ending = Ending("failed", {}, reason="needs_input", detail={"question": question})
+        ending = Ending(FAILED, {}, reason=HarnessReason.NEEDS_INPUT, detail={"question": question})
         return CallResult("not answered: nobody is there", error=True, update=StateUpdate(ending=ending))
     return CallResult(answer)
 
@@ -222,12 +222,12 @@ async def _exit(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
         )
     if isinstance(outputs, dict):
         given = {**state["outputs"], **outputs}  # what was recorded while the node ran, then what EXIT carries (JOB-7a)
-        check = definition.outputs_on_done if outcome == "done" else definition.outputs_otherwise
+        check = definition.outputs_on_done if outcome == DONE else definition.outputs_otherwise
         errors = [f"{'/'.join(map(str, e.path)) or 'outputs'}: {e.message}" for e in check.iter_errors(given)]
     else:
         given, errors = {}, [f"outputs: {outputs!r} is not of type 'object'"]
     if errors and state["rejections"] >= CORRECTIONS:
-        ending = Ending("failed", {}, reason="invalid_output", detail={"errors": errors})
+        ending = Ending(FAILED, {}, reason=HarnessReason.INVALID_OUTPUT, detail={"errors": errors})
         return CallResult(f"the outputs do not match the node's output schema: {errors}.", error=True,
                           update=StateUpdate(ending=ending))
     if errors:

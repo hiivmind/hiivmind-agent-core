@@ -16,6 +16,9 @@ from agent_core.backends.langgraph.backend import LangGraphBackend  # noqa: E402
 from agent_core.backends.langgraph.settings import LangGraphSettings  # noqa: E402
 from agent_core.contracts.events import ModelRequested  # noqa: E402
 from agent_core.contracts.unit import DeclaredTools, Unit  # noqa: E402
+from agent_core.contracts.values import HarnessReason  # noqa: E402
+from agent_core.contracts.topology import END, FragmentDef, Step  # noqa: E402
+from agent_core.backends.langgraph.fragments import fragment_result  # noqa: E402
 
 INSTANCE = CONFORMANCE / "instance" / "instance.yaml"
 STEPS = [[["set", {"key": "mine", "value": "m"}]], [["exit", {}]]]
@@ -76,3 +79,20 @@ async def test_the_second_run_of_a_refused_item_starts_from_a_fresh_context(tmp_
     assert held == [["user"], ["user", "call"], ["user"], ["user", "call"]]   # the second run's first request is the brief's messages only
     [failure] = result.facts["revisions_failures"]
     assert failure["reason"].endswith("(run twice)")   # refused again: the item fails, and is not run a third time
+
+
+def test_no_transition_survives_the_checkpoint():   # Review Focus 3, CD-10
+    """A fragment's state as the checkpointer writes and reads it back: the result's reason is still the enum."""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+    fragment = FragmentDef("f", (), (), ("done", "failed"), Step("count"), {"count": {"done": END}})
+    state = {
+        "facts": {}, "items": {}, "results": {}, "outcome": "skipped",
+        "trail": [{"name": "count", "outcome": "failed", "reason": HarnessReason.NO_EXIT}],
+        "ended": {"end": "failed", "message": "`count` exited `skipped` and the sequence has no transition for it"},
+    }
+    serde = JsonPlusSerializer()
+    result = fragment_result(fragment, serde.loads_typed(serde.dumps_typed(state)))
+    assert result.reason is HarnessReason.NO_TRANSITION
+    assert result.detail == {"message": "`count` exited `skipped` and the sequence has no transition for it"}
+    assert result.steps[0]["reason"] is HarnessReason.NO_EXIT
