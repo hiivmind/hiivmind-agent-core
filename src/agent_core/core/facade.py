@@ -2,9 +2,9 @@
 
 The harness implements `contracts.facade.Harness`. It loads the instance, its settings and the default backend when it
 is opened, so that a run that cannot start is found now. A run starts by resolving what it is made of: its settings, the
-environment its functions and servers read, the servers it holds one connection to for its length (TOOL-15), the
-declared-tool set (the instance's functions and the client's), and each provider looked up by name. It gives the
-environment back and closes its servers when it ends, whether or not it raised.
+servers it holds one connection to for its length (TOOL-15), given the instance and the run directory in their
+environment (RP-1), the declared-tool set (the instance's functions and the client's), and each provider looked up by
+name. It closes its servers when it ends, whether or not it raised. It changes nothing of the process's environment.
 """
 
 from __future__ import annotations
@@ -122,19 +122,15 @@ class _Run:
         resources: ResourceSource,
         person: Person,
         run_dir: Path | None,
-        before: Mapping[str, str | None],
     ):
         self._h, self.declared, self.functions, self.settings = harness, declared, functions, settings
-        self.resources, self.person, self.run_dir, self._before = resources, person, run_dir, before
+        self.resources, self.person, self.run_dir = resources, person, run_dir
         self.labels: list[str] = []
         self.failures: list[dict] = []
 
     async def end(self) -> None:
-        """Close the run's servers and give back the environment it set."""
-        try:
-            await self.declared.servers.close()
-        finally:
-            _restore(self._before)
+        """Close the run's servers."""
+        await self.declared.servers.close()
 
     async def port(self, name: str, args: dict, state: dict) -> object:
         """A declared tool, called with `state` as a function is given it. A tool that is not declared is a `ToolError`."""
@@ -225,14 +221,6 @@ class _Run:
             person=_Asking(self.person, h.person_lock, inputs), resources=self.resources, settings=self.settings,
             events=h.hub, start=state,
         )
-
-
-def _restore(before: Mapping[str, str | None]) -> None:
-    for key, value in before.items():
-        if value is None:
-            os.environ.pop(key, None)
-        else:
-            os.environ[key] = value
 
 
 def _record(state: NodeState, contract: NodeContract, key: str, value: object) -> None:
@@ -408,9 +396,9 @@ class Harness:
             raise FeatureNotSupported(feature, self.backend_name, entry)
 
     async def begin(self, run_dir: Path | None, backend: Backend | None = None) -> _Run:
-        """Start a run (`run_dir` is None outside a sequence): its settings, the environment the instance's functions and
-        servers (TOOL-15, made by `backend`, the default one when None, whose `servers` read the environment as it is
-        now), and the declared-tool set (TOOL-16). The caller calls `end` on the run."""
+        """Start a run (`run_dir` is None outside a sequence): its settings, its servers (TOOL-15, made by `backend`, the
+        default one when None, given the instance and the run directory in their environment, RP-1), and the
+        declared-tool set (TOOL-16). The caller calls `end` on the run."""
         try:
             settings = load_settings(self.instance, [Path(f) for f in self.settings_files], self._params)
         except SettingsError as e:
@@ -418,22 +406,19 @@ class Harness:
         self.runs.mkdir(parents=True, exist_ok=True)
         if run_dir is not None:
             run_dir.mkdir(parents=True, exist_ok=True)
-        given = {"AGENT_CORE_INSTANCE": str(self.root), "AGENT_CORE_RUN_DIR": str(run_dir or self.runs)}
-        before = {key: os.environ.get(key) for key in given}
-        os.environ.update(given)
+        env = {**os.environ, "AGENT_CORE_INSTANCE": str(self.root), "AGENT_CORE_RUN_DIR": str(run_dir or self.runs)}
         servers = None
         try:
             person = self._person if not isinstance(self._person, str) else self.lookup("person", self._person)()
             resources = self.lookup("resources", "folder")(self.root)
-            servers = (backend or self.backend(None)).servers(dict(self.servers), self.root)
+            servers = (backend or self.backend(None)).servers(dict(self.servers), self.root, env)
             functions = dict(self.functions)
             declared = await resolve(functions, servers, {name: name for name in self.servers})
         except BaseException:
             if servers is not None:
                 await servers.close()
-            _restore(before)
             raise
-        return _Run(self, declared, functions, settings, resources, person, run_dir, before)
+        return _Run(self, declared, functions, settings, resources, person, run_dir)
 
     async def sequence(
         self, run_id: str, go: Callable[[Macro], Awaitable[WalkResult]], run_dir: Path | None = None

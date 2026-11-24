@@ -338,19 +338,34 @@ async def test_open_and_close_bring_the_instances_directory_onto_the_path_and_ba
     assert sys.path == before
 
 
-async def test_a_run_sets_the_instance_and_run_directory_and_gives_them_back_when_it_ends(toy, open_harness, tmp_path, monkeypatch):
+async def test_a_run_gives_its_servers_the_instance_and_run_directory_and_leaves_the_process_alone(toy, open_harness, tmp_path, monkeypatch):   # E7, RP-1
     monkeypatch.delenv("AGENT_CORE_RUN_DIR", raising=False)
     monkeypatch.setenv("AGENT_CORE_INSTANCE", "before")
     backend = toy(PLAIN, raises={"locate": RuntimeError("boom")})
     harness = open_harness(FIXTURE, **spike())
     await harness.nodes.run("plain", {})
-    assert backend.environment == [
-        {"AGENT_CORE_INSTANCE": str(FIXTURE.resolve()), "AGENT_CORE_RUN_DIR": str(tmp_path / "runs")}
-    ]
-    assert os.environ["AGENT_CORE_INSTANCE"] == "before" and "AGENT_CORE_RUN_DIR" not in os.environ
-    with pytest.raises(RuntimeError):   # a run that raises gives them back too
+    given = backend.servers_env[-1]
+    assert given["AGENT_CORE_INSTANCE"] == str(FIXTURE.resolve()) and given["AGENT_CORE_RUN_DIR"] == str(tmp_path / "runs")
+    assert backend.environment == [{"AGENT_CORE_INSTANCE": "before"}]   # what the process held while the node ran
+    with pytest.raises(RuntimeError):   # Review Focus 5: a run that raises leaves it as it was too
         await harness.nodes.run("locate", {"source": "polars"})
     assert os.environ["AGENT_CORE_INSTANCE"] == "before" and "AGENT_CORE_RUN_DIR" not in os.environ
+
+
+async def test_a_function_that_reads_the_run_directory_from_the_environment_is_told_it_failed(toy, open_harness, copy, monkeypatch):   # E8, Q5
+    monkeypatch.delenv("AGENT_CORE_RUN_DIR", raising=False)
+    copy.frontmatter("plain", **{"allowed-tools": "[note]"})
+    toy({"plain": [[("note", {})], [("exit", {"outcome": "done", "outputs": {"done_work": "w"}})]]})
+    harness = open_harness(copy.root, **spike())
+
+    def note(state):
+        """Write a note into the run directory."""
+        return os.environ["AGENT_CORE_RUN_DIR"]
+
+    harness.tools.register(note)
+    await harness.nodes.run("plain", {})
+    [result] = [e for e in harness.events.record() if isinstance(e, ToolReturned) and e.call.name == "note"]
+    assert (result.text, result.error) == ("error: note raised KeyError: 'AGENT_CORE_RUN_DIR'", True)
 
 
 async def test_a_harness_that_closes_after_another_opened_leaves_that_harness_its_own_run_directory(toy, open_harness, tmp_path):
@@ -698,7 +713,7 @@ async def test_a_relative_run_directory_of_a_rerun_is_resolved_before_the_enviro
     first = await harness.sequences.run("chain", {"scan_results": [["e1"]]})
     monkeypatch.chdir(tmp_path)
     await harness.sequences.rerun(first.run_id, 2, run_dir=Path("again"))
-    assert backend.environment[-1]["AGENT_CORE_RUN_DIR"] == str(tmp_path / "again") and (tmp_path / "again").is_dir()
+    assert backend.servers_env[-1]["AGENT_CORE_RUN_DIR"] == str(tmp_path / "again") and (tmp_path / "again").is_dir()
 
 
 async def test_the_record_names_the_sequence_run_fresh_resumed_and_rerun(toy, open_harness):   # JOB-9a

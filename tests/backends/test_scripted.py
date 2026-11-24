@@ -90,11 +90,9 @@ def test_the_matrix_holds_an_entry_for_every_feature_and_builds_what_it_declares
     }
 
 
-async def test_servers_copy_the_environment_as_it_is_when_they_are_made(tmp_path, monkeypatch):
-    monkeypatch.setenv("AGENT_CORE_RUN_DIR", "first")
-    servers = ScriptedBackend(ScriptedSettings()).servers({}, tmp_path)
-    monkeypatch.setenv("AGENT_CORE_RUN_DIR", "second")
-    assert isinstance(servers, McpServers) and servers._env["AGENT_CORE_RUN_DIR"] == "first"
+async def test_servers_are_given_the_environment_they_are_made_with(tmp_path):   # RP-1
+    servers = ScriptedBackend(ScriptedSettings()).servers({}, tmp_path, {"X": "1"})
+    assert isinstance(servers, McpServers) and servers._env == {"X": "1"}
     await servers.close()
 
 

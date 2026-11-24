@@ -36,15 +36,17 @@ class Toy:
         self.handovers: list[tuple] = []
         self.served: dict | None = None
         self.sources: list[Watched] = []         # the server sources the harness had it make, one for each run
-        self.environment: list[dict] = []        # AGENT_CORE_* as each unit saw them
+        self.environment: list[dict] = []        # AGENT_CORE_* in the process as each unit ran
+        self.servers_env: list[dict] = []        # the environment each server source was made with
         self.closed = False
 
     def features(self):
         return self.matrix
 
-    def servers(self, declared, root):
+    def servers(self, declared, root, env):
         self.served = dict(declared)
-        self.sources.append(Watched(declared, dict(os.environ), root))
+        self.servers_env.append(dict(env))
+        self.sources.append(Watched(declared, dict(env), root))
         return self.sources[-1]
 
     async def run_fragment(self, unit):

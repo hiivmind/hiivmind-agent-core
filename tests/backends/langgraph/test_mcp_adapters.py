@@ -280,19 +280,18 @@ async def test_a_server_that_dies_mid_fan_out_fails_each_call_in_flight(opened, 
         await h.close()
 
 
-async def test_servers_copies_the_environment_when_it_is_called(tmp_path, monkeypatch):    # the facade has just set it
+async def test_servers_start_with_the_environment_they_are_given(tmp_path, monkeypatch):    # RP-1
     from agent_core.backends.langgraph import LangGraphBackend
     from agent_core.backends.langgraph.settings import LangGraphSettings
 
-    monkeypatch.setenv("AGENT_CORE_RUN_DIR", str(tmp_path))
-    monkeypatch.setenv("SERVERS_PROBE", "as it was")
+    env = {**os.environ, "AGENT_CORE_RUN_DIR": str(tmp_path), "SERVERS_PROBE": "as given"}
+    monkeypatch.setenv("SERVERS_PROBE", "in the process")
     source = LangGraphBackend(LangGraphSettings(MODEL=f"script:{tmp_path}")).servers(
-        {"shell": {"command": "python", "args": ["-m", "agent_tools.shell_server"]}}, tmp_path
+        {"shell": {"command": "python", "args": ["-m", "agent_tools.shell_server"]}}, tmp_path, env
     )
-    monkeypatch.setenv("SERVERS_PROBE", "changed since")
     try:
         assert isinstance(source, AdapterServers)
         ran = json.loads(await source.call("shell__run", {"command": "echo $SERVERS_PROBE"}, {}))
-        assert ran["stdout"] == "as it was\n"
+        assert ran["stdout"] == "as given\n"
     finally:
         await source.close()

@@ -7,7 +7,6 @@ is the model saying that and making no call. Each node has its script, `<node>.j
 
 import dataclasses
 import json
-import os
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -88,8 +87,8 @@ class ScriptedBackend:
     def features(self) -> Matrix:
         return self.FEATURES
 
-    def servers(self, declared: Mapping[str, dict], root: Path) -> McpServers:
-        return McpServers(declared, dict(os.environ), root)   # the environment as it is now: the facade has just set it
+    def servers(self, declared: Mapping[str, dict], root: Path, env: Mapping[str, str]) -> McpServers:
+        return McpServers(declared, dict(env), root)
 
     def _steps(self, node: str) -> list:
         scripts = self._settings.SCRIPTS if self._settings is not None else None

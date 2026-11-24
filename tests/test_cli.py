@@ -111,7 +111,8 @@ def test_a_resumed_step_writes_its_files_into_the_run_directory_asked_for(tmp_pa
     crashed = jobs("refresh", env={"SEQ_CRASH": "verify"})
     assert crashed.code == 3
     output = tmp_path / "output"
-    done = jobs("refresh", args=["--resume", "run", "--run-dir", str(output)])
+    # the fixture's tool is a function: it writes where the environment says, which the test sets to the run's (Q5)
+    done = jobs("refresh", args=["--resume", "run", "--run-dir", str(output)], env={"AGENT_CORE_RUN_DIR": str(output)})
     assert done.code == 0 and done.out.startswith("run run\n"), done.out
     assert read_record(output)["run_id"] == "run"
     resumed = [json.loads(line) for line in (output / "calls.jsonl").read_text().splitlines()]   # a tool of the resumed step wrote it
