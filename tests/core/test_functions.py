@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from agent_core.contracts.errors import RunCannotStart
+from agent_core.contracts.loading import load_module
 from agent_core.core.functions import FunctionTool, describe, import_declared
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "instance"
@@ -100,3 +101,16 @@ def test_function_file_that_does_not_parse_names_the_tool_and_the_error(tmp_path
         import_declared(tmp_path, {"broken": "broken:f"})
     assert str(e.value).startswith('instance.yaml: tool "broken": cannot import broken:f: SyntaxError')
     assert "\n" not in str(e.value)
+
+
+def test_two_instances_each_get_their_own_tools_module(tmp_path):                          # Review Focus 2, RP-3
+    roots = {}
+    for kind in ("a", "b"):
+        tools = tmp_path / kind / "tools"
+        tools.mkdir(parents=True)
+        (tools / "sources.py").write_text(f"KINDS = [{kind!r}]\n")
+        (tools / "status.py").write_text("from .sources import KINDS\n")
+        roots[kind] = tmp_path / kind
+    assert load_module(roots["a"], "tools.status").KINDS == ["a"]
+    assert load_module(roots["b"], "tools.status").KINDS == ["b"]
+    assert load_module(roots["a"], "tools.status") is load_module(roots["a"], "tools.status")   # one module for each file

@@ -191,14 +191,14 @@ def test_no_ask_returns_needs_input_even_at_a_terminal(job):
 
 SIBLINGS = {
     "tools/sources.py": "KINDS = ['docs', 'api']\n",
-    "tools/status.py": "from tools.sources import KINDS\n\n\ndef status(state):\n    \"\"\"Say which kinds there are.\"\"\"\n"
+    "tools/status.py": "from .sources import KINDS\n\n\ndef status(state):\n    \"\"\"Say which kinds there are.\"\"\"\n"
                        "    state['done_work'] = ','.join(KINDS)\n    return {'kinds': KINDS}\n",
 }
 KINDS_NODE = "---\nname: plain\ndescription: Say the kinds.\ninputs: {}\noutputs:\n  done_work: {type: string, description: the kinds}\n" \
              "exits: [done, failed]\nallowed-tools: [status]\n---\n# Plain\n\n## Steps\n\n1. CALL `status`.\n2. EXIT `done`.\n"
 
 
-def test_an_instances_files_import_each_other_by_name_through_the_command(job, tmp_path):        # review 1
+def test_an_instances_files_import_each_other_relatively_through_the_command(job, tmp_path):        # review 1, E9
     script = [[["status", {}]], [["exit", {"outcome": "done", "outputs": {"done_work": "docs,api"}}]]]
     command, environment, run_dir = job.jobs.command(
         "plain_run", settings=(ALPHA,), scripts={"plain": script}, with_tool="status: tools.status:status",
@@ -209,8 +209,17 @@ def test_an_instances_files_import_each_other_by_name_through_the_command(job, t
     assert read_record(run_dir)["facts"]["done_work"] == "docs,api"
 
 
+def test_an_absolute_sibling_import_does_not_load(job):                                           # E9, RP-3
+    absolute = {**SIBLINGS, "tools/status.py": SIBLINGS["tools/status.py"].replace("from .sources", "from tools.sources")}
+    ran = job(with_tool="status: tools.status:status", files=absolute)
+    assert ran.code == 2 and ran.out == (
+        'error: instance.yaml: tool "status": cannot import tools.status:status: '
+        "ModuleNotFoundError: No module named 'tools'\n"
+    )
+
+
 def test_a_tool_file_that_fails_to_import_says_why_and_exits_two(job):                          # review 1, 3
-    ran = job(with_tool="status: tools.status:status", files={"tools/status.py": "from tools.nothing import X\n"})
+    ran = job(with_tool="status: tools.status:status", files={"tools/status.py": "from .nothing import X\n"})
     assert ran.code == 2 and ran.out.count("\n") == 1
     assert ran.out.startswith('error: instance.yaml: tool "status": cannot import tools.status:status: ModuleNotFoundError')
     assert "tools.nothing" in ran.out

@@ -325,15 +325,14 @@ async def test_open_stops_with_run_cannot_start_for_what_it_cannot_load(toy):
         agent_core.open(FIXTURE / "instance.yaml", settings=[ALPHA], params={"BOGUS": "1"}, **runs)
 
 
-async def test_open_and_close_bring_the_instances_directory_onto_the_path_and_back(toy, open_harness):
+async def test_open_leaves_sys_path_as_it_was(toy, open_harness):                           # RP-3, P7
     toy()
-    root = str(FIXTURE.resolve())
     before = list(sys.path)
     with pytest.raises(RunCannotStart):
         agent_core.open(FIXTURE / "instance.yaml", backend="toy")
     assert sys.path == before
     harness = open_harness(FIXTURE, **spike())
-    assert sys.path[0] == root
+    assert sys.path == before
     await harness.close()
     assert sys.path == before
 

@@ -13,7 +13,6 @@ import asyncio
 import json
 import os
 import re
-import sys
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
@@ -467,15 +466,12 @@ class Harness:
         raise FeatureNotSupported(Feature.F6, self.backend_name, entry)
 
     async def close(self) -> None:
-        """Close the backends this harness made, and give back the instance's directory on the path."""
+        """Close the backends this harness made."""
         if self._closed:
             return
         self._closed = True
-        try:
-            for backend in self._backends.values():
-                await backend.close()
-        finally:
-            sys.path.remove(str(self.root))
+        for backend in self._backends.values():
+            await backend.close()
 
     async def __aenter__(self) -> Harness:
         return self
@@ -497,14 +493,7 @@ def open(
     `backend`). `person` is a `Person`, or a name the registry knows (`terminal`, `nobody`); None is nobody. `runs` is where
     runs are kept (default: `<instance directory>/runs`). Whatever stops the run before it can start raises `RunCannotStart`
     (TOOL-16, REG-2, SET-3, INST-1). Tool servers are connected when the first run starts."""
-    path = Path(instance)
-    root = str(path.resolve().parent)
-    sys.path.insert(0, root)  # the instance's own files import each other by name (`from tools.sources import X`)
     try:
-        return Harness(path, backend=backend, settings=settings, params=params, person=person, runs=runs)
+        return Harness(Path(instance), backend=backend, settings=settings, params=params, person=person, runs=runs)
     except (InstanceError, SettingsError) as e:
-        sys.path.remove(root)
         raise RunCannotStart(str(e)) from e
-    except BaseException:
-        sys.path.remove(root)
-        raise
