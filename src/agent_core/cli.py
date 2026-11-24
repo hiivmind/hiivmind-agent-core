@@ -3,13 +3,9 @@ sequence ended `done` or `stopped`; 1: it ended `failed` or the run raised; 2: t
 
 import argparse
 import asyncio
-import dataclasses
-import json
 import sys
 from collections.abc import Sequence
-from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 import agent_core
 
@@ -50,8 +46,7 @@ async def _job(args: argparse.Namespace) -> int:
     attended = sys.stdin is not None and sys.stdin.isatty() and not args.no_ask  # JOB-6
     run_dir = args.run_dir.resolve() if args.run_dir is not None else None
     runs = run_dir.parent if run_dir is not None else None
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-    run_id = args.resume or (run_dir.name if run_dir is not None else f"{args.name}-{stamp}-{uuid4().hex[:6]}")
+    run_id = args.resume or (run_dir.name if run_dir is not None else agent_core.new_run_id(args.name))
     try:
         async with agent_core.open(
             args.instance, backend=args.backend, settings=args.settings, params=dict(args.param),
@@ -69,13 +64,15 @@ async def _job(args: argparse.Namespace) -> int:
     except agent_core.RunCannotStart as e:
         print(f"error: {e}", flush=True)
         return 2
-    run_dir = run_dir or args.instance.resolve().parent / "runs" / result.run_id
-    run_dir.mkdir(parents=True, exist_ok=True)
-    (run_dir / "record.json").write_text(json.dumps(dataclasses.asdict(result.record), indent=2, default=str))
     if result.end == "failed":
         print(f"error: sequence `{args.name}` ended failed: {result.summary}", flush=True)
     elif isinstance(result.summary, str):
         print(result.summary, flush=True)
+    try:  # the record is written whole or not at all, and a value it cannot hold is named (Q7)
+        (result.run_dir / "record.json").write_text(result.record.to_json())
+    except (TypeError, OSError) as e:
+        print(f"error: the run record of `{result.run_id}` cannot be written: {e}", flush=True)
+        return 1
     return 1 if result.end == "failed" else 0
 
 

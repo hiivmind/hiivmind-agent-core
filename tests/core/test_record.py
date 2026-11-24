@@ -1,3 +1,7 @@
+import json
+from datetime import datetime, timezone
+
+import pytest
 from pydantic import SecretStr
 
 from agent_core.contracts.events import ModelRequested, ModelResponded, NodeEnded, NodeStarted, RequestPart
@@ -121,3 +125,14 @@ def test_a_run_that_raised_is_recorded_failed_with_the_error_and_what_the_walk_h
 def test_a_run_that_raised_before_its_walk_began_has_no_steps_and_no_facts():
     made = record(error="boom", progress={})
     assert (made.steps, made.facts) == ([], None)
+
+
+def test_a_record_with_a_value_that_is_not_json_names_the_field():                        # E10, Q7
+    made = record(result={"end": "done", "trail": [], "facts": {"at": datetime.now(timezone.utc)}, "summary": "s"})
+    with pytest.raises(TypeError, match=r"^facts: Object of type datetime is not JSON serializable$"):
+        made.to_json()
+
+
+def test_a_record_serialises_to_json_with_its_notes():                                   # RP-5
+    made = record(result={"end": "done", "trail": [], "facts": {}, "summary": "s"})
+    assert json.loads(made.to_json())["notes"][0]["label"] == "scan#1"

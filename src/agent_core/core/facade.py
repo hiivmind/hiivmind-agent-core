@@ -57,8 +57,12 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def _new_run_id(sequence: str) -> str:
+def new_run_id(sequence: str) -> str:
+    """The id of a new run of `sequence`: its name, the time it started and six random hex digits (RP-7)."""
     return f"{sequence}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:6]}"
+
+
+_new_id = new_run_id   # `rerun`'s keyword `new_run_id` hides the function inside it
 
 
 async def _cannot_summarise(system: str, text: str) -> str:
@@ -264,7 +268,7 @@ class _Sequences:
 
     async def run(self, name: str, inputs: Mapping | None = None, *, run_id: str | None = None) -> SequenceResult:
         self._known(name)
-        run_id, facts = run_id or _new_run_id(name), dict(inputs or {})
+        run_id, facts = run_id or new_run_id(name), dict(inputs or {})
         return await self._h.sequence(run_id, lambda macro: macro.start(run_id, name, facts))
 
     async def resume(self, run_id: str, *, name: str | None = None, run_dir: Path | None = None) -> SequenceResult:
@@ -279,7 +283,7 @@ class _Sequences:
         if name is not None:
             self._known(name)
         match = RUN_ID.fullmatch(run_id)
-        new = new_run_id or _new_run_id(match.group(1) if match else run_id)
+        new = new_run_id or _new_id(match.group(1) if match else run_id)
         return await self._h.sequence(new, lambda macro: macro.rerun(new, run_id, from_step), run_dir)
 
 
@@ -453,7 +457,7 @@ class Harness:
             start=start, end=_now(), failures=run.failures, events=self.hub.record(), labels=run.labels, run_id=run_id,
             sequence=sequence, result=result, error=error, progress=macro.progress,
         )
-        return SequenceResult(record.end_state, record.facts or {}, record.steps, run_id, record.summary, record)
+        return SequenceResult(record.end_state, record.facts or {}, record.steps, run_id, record.summary, record, run_dir)
 
     # --- the facade -------------------------------------------------------------------------------------------
 

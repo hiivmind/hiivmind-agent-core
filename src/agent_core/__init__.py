@@ -11,6 +11,7 @@ _EXPORTS = {
     "RunCannotStart": "agent_core.contracts.errors",
     "ToolServerError": "agent_core.contracts.errors",
     "Outcome": "agent_core.contracts.values",
+    "new_run_id": "agent_core.core.facade",
     "open": "agent_core.core.facade",
 }
 
