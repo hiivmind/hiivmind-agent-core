@@ -182,7 +182,8 @@ class _Run:
         found = h.instance.nodes[node]
         contract = found.contract
         h.started += 1
-        label = f"{node}#{h.started}"
+        number = h.started   # this run's own: another run may start while this one awaits below
+        label = f"{node}#{number}"
         self.labels.append(label)
         for tool in found.allowed_tools:  # a misdeclared node fails before any tool is called
             if tool not in self.declared.specs:
@@ -219,7 +220,7 @@ class _Run:
             return UnitResult(FAILED, {}, reason=HarnessReason.UNKNOWN_PLACEHOLDER, detail={"detail": str(e)})
         h.hub.emit(NodeStarted(label, node, parts, tuple(spec.name for spec in offered)))
         return NodePolicy(
-            found, number=h.started, instructions=instructions, tools=offered, handover=tuple(handover), opening=OPENING,
+            found, number=number, instructions=instructions, tools=offered, handover=tuple(handover), opening=OPENING,
             functions=self.functions, servers=self.declared.servers,
             person=_Asking(self.person, h.person_lock), resources=self.resources, settings=self.settings,
             events=h.hub, start=state,

@@ -671,6 +671,26 @@ async def test_two_fan_out_runs_that_ask_are_put_one_question_at_a_time_with_the
     assert result.record.attended is True
 
 
+async def test_a_run_that_waits_while_it_starts_is_asked_with_its_own_number(toy, open_harness):   # RP-8, final review
+    entered, both = [], asyncio.Event()
+
+    class Waiting:
+        async def build(self, request):   # each run waits here until the other has started too
+            entered.append(request.node)
+            if len(entered) == 2:
+                both.set()
+            await both.wait()
+            return ()
+
+    toy({"asker": ASK["asker"]})
+    person = ToyPerson("red", pause=0)
+    harness = open_harness(FIXTURE, **spike(person=person))
+    harness.extensions.register("context", "none", Waiting)
+    await asyncio.gather(harness.nodes.run("asker", {"who": "polars"}), harness.nodes.run("asker", {"who": "ibis"}))
+    started = sorted(e.label for e in harness.events.record() if isinstance(e, NodeStarted))
+    assert sorted(f"{q.node}#{q.number}" for q in person.asked) == started == ["asker#1", "asker#2"]
+
+
 async def test_a_fan_out_that_asks_with_nobody_there_ends_needs_input(toy, open_harness, asking):   # JOB-6
     toy(ASK)
     harness = open_harness(asking.root, **spike())
