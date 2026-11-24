@@ -4,7 +4,6 @@ never on the backend (KIT-1)."""
 import asyncio
 import contextvars
 import dataclasses
-import os
 from collections.abc import Mapping
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -45,8 +44,8 @@ class LangGraphBackend:
     def features(self) -> Matrix:
         return self.FEATURES
 
-    def servers(self, declared: Mapping[str, dict], root: Path) -> AdapterServers:
-        return AdapterServers(declared, dict(os.environ), root)   # the environment as it is now: the facade has just set it
+    def servers(self, declared: Mapping[str, dict], root: Path, env: Mapping[str, str]) -> AdapterServers:
+        return AdapterServers(declared, dict(env), root)
 
     async def _saver(self, run_dir: Path | None) -> AsyncSqliteSaver | None:
         """The checkpointer of a run directory, `checkpoints.sqlite` in it; none for a unit that has no run directory."""
@@ -90,7 +89,10 @@ class LangGraphBackend:
         messages = _render(policy.handover)
         if policy.opening:   # a run started again ends its hand-over with a call and its result: no opening then
             messages.append(HumanMessage(policy.opening))
-        config = {"recursion_limit": self._settings.RECURSION_LIMIT, "configurable": configurable}
+        config = {
+            "recursion_limit": self._settings.RECURSION_LIMIT, "configurable": configurable,
+            "metadata": {"agent_core_node": unit.name},   # the node that is running, for a model that needs it (CD-13)
+        }
         saver = checkpointer if isinstance(checkpointer, AsyncSqliteSaver) else None
         try:
             payload = await self._input(agent, config, {"messages": messages, "node": policy.initial()}, unit.intent, saver)

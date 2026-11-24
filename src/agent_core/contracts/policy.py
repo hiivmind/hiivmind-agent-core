@@ -5,7 +5,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Protocol, TypedDict
 
-from .values import Message, ModelResponse, ToolCall, ToolSpec
+from .values import HarnessReason, Message, ModelResponse, ToolCall, ToolSpec
 
 if TYPE_CHECKING:
     from .unit import UnitResult
@@ -24,7 +24,7 @@ class NodeState(TypedDict):
 class Ending:
     outcome: str
     outputs: dict
-    reason: str | None = None
+    reason: HarnessReason | None = None
     detail: dict = field(default_factory=dict)
 
 

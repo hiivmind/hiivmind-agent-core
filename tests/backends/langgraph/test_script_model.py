@@ -11,7 +11,8 @@ from script_model import ScriptChatModel, ScriptRefusal  # noqa: E402
 from agent_core.backends.langgraph.providers import provider_module  # noqa: E402
 from agent_core.backends.langgraph.settings import LangGraphSettings  # noqa: E402
 
-BRIEF = SystemMessage("# Procedure of the node that is running: `n`\n")
+BRIEF = SystemMessage("The node's procedure.\n")   # the model reads its node from the run config, not the brief (CD-13)
+NODE = {"metadata": {"agent_core_node": "n"}}
 
 
 def model_of(tmp_path, steps):
@@ -23,7 +24,7 @@ def ask(model, conversation, first="one"):
     """One model call over the conversation; the answer joins it. A refusal is returned as its kind."""
     messages = [BRIEF, HumanMessage(first, id=first), *conversation]
     try:
-        answer = model.invoke(messages)
+        answer = model.invoke(messages, config=NODE)
     except ScriptRefusal as e:
         return e.kind
     conversation.append(answer)
@@ -76,7 +77,7 @@ def test_a_crash_is_played_once_and_a_raise_before_it_is_not_replayed_after_resu
 def test_handed_over_answers_are_not_script_progress(tmp_path):
     model = model_of(tmp_path, [[["lookup_revision", {"name": "a"}]], "done"])
     handed = [HumanMessage("earlier", id="h"), AIMessage("an earlier answer"), HumanMessage("go", id="g")]
-    answer = model.invoke([BRIEF, *handed])
+    answer = model.invoke([BRIEF, *handed], config=NODE)
     assert answer.tool_calls[0]["name"] == "lookup_revision"
 
 
@@ -85,5 +86,12 @@ def test_the_same_messages_under_two_thread_ids_each_get_the_refusal_first(tmp_p
     messages = [BRIEF, HumanMessage("same", id="same")]
     for thread in ("A", "B"):
         with pytest.raises(ScriptRefusal):
-            model.invoke(messages, config={"configurable": {"thread_id": thread}})
-    assert model.invoke(messages, config={"configurable": {"thread_id": "A"}}).text == "answer"
+            model.invoke(messages, config={"configurable": {"thread_id": thread}, **NODE})
+    assert model.invoke(messages, config={"configurable": {"thread_id": "A"}, **NODE}).text == "answer"
+
+
+def test_the_model_finds_its_node_in_the_run_config(tmp_path):                            # CD-13
+    model = model_of(tmp_path, ["played n"])
+    assert model.invoke([BRIEF, HumanMessage("go", id="g")], config=NODE).text == "played n"
+    with pytest.raises(ValueError, match="agent_core_node"):
+        model.invoke([BRIEF, HumanMessage("go", id="g")])

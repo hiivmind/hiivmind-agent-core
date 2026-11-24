@@ -8,7 +8,7 @@ from agent_core.contracts.person import Person
 from agent_core.contracts.errors import FeatureNotSupported, ToolServerError
 from agent_core.contracts.matrix import Entry, Feature
 from agent_core.contracts.topology import NodeContract
-from agent_core.contracts.values import BUILT_IN_OUTCOMES, HARNESS_REASONS
+from agent_core.contracts.values import BUILT_IN_OUTCOMES, DONE, FAILED, HarnessReason
 from agent_core.contracts.walk import RETRY_PAUSE, WalkResult
 
 
@@ -27,7 +27,9 @@ def test_a_contracts_outcomes_add_the_built_ins_once():
 
 def test_fixed_values():
     assert BUILT_IN_OUTCOMES == ("skipped", "stopped")
-    assert HARNESS_REASONS == ("needs_input", "invalid_output", "no_exit", "unknown_placeholder", "precondition_unmet")
+    assert [r.value for r in HarnessReason] == [
+        "needs_input", "invalid_output", "no_exit", "unknown_placeholder", "precondition_unmet", "no_transition"]
+    assert (DONE, FAILED) == ("done", "failed")
     assert RETRY_PAUSE == 60
 
 
@@ -50,6 +52,5 @@ def test_handover_request_is_frozen():
         h.node = "x"
 
 
-def test_person_ask_takes_a_label():
-    p = inspect.signature(Person.ask).parameters
-    assert list(p) == ["self", "question", "label"] and p["label"].default == ""
+def test_person_ask_takes_a_question():                                                     # RP-8
+    assert list(inspect.signature(Person.ask).parameters) == ["self", "question"]

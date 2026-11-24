@@ -46,7 +46,7 @@ async with agent_core.open("instance.yaml", backend=None, settings=(), params=No
 | `harness.extensions.register(kind, name, provider)` | a backend, context, person, resources or journal of the client's own |
 | `harness.sessions` | raises `FeatureNotSupported`: sessions are step 7 |
 
-`person` is a `Person` or the name of a registered one (`"terminal"`, `"nobody"`); `runs` is the directory of the run directories and the journal (default `<instance directory>/runs/`).
+`person` is a `Person` or the name of a registered one (`"terminal"`, `"nobody"`); its `ask` takes a `Question` (the text, the node, its run number and its inputs). `runs` is the directory of the run directories and the journal (default `<instance directory>/runs/`).
 
 ## Instances
 
@@ -56,6 +56,8 @@ An instance is a directory with `instance.yaml` (name, entry, policy, backend, s
 - **Includes.** Prose shared between nodes is an include: `{{include includes/safety.md}}` in a node's text, a file under the instance's `includes/`.
 - **The topology** names the sequences (a start, transitions on each node's outcome, checks before the first step), the fragments (a declared unit, walked as one step, with a fan-out), and the exits.
 - **Function tools** are `name: module:function` under `tools:`; MCP servers are under `servers:`; both are checked and listed to a node by name.
+- **An instance's files import each other relatively** (`from .sources import X`): the instance directory is loaded as a package of its own, and nothing is put on `sys.path`.
+- **The run's variables reach servers only.** A server starts with `AGENT_CORE_INSTANCE` and `AGENT_CORE_RUN_DIR` in its environment; a function tool or a check runs in the harness's process and reads no `AGENT_CORE_*` variable, since a run does not change `os.environ`.
 
 ## Install
 

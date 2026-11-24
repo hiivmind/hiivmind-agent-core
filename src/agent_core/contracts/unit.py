@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 from .events import EventSink
 from .tools import ToolSource
 from .topology import FragmentDef, Topology
-from .values import ToolSpec
+from .values import HarnessReason, ToolSpec
 
 if TYPE_CHECKING:
     from .policy import Policy
@@ -27,7 +27,7 @@ class DeclaredTools:
 class UnitResult:
     exit: str
     outputs: dict
-    reason: str | None = None
+    reason: HarnessReason | None = None
     detail: dict = field(default_factory=dict)
     steps: tuple[dict, ...] = ()   # a fragment's inner trail, [{"name", "outcome"[, "outputs" of a failed step][, "reason"][, "detail"]}] in the order they ended
 

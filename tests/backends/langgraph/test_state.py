@@ -19,9 +19,10 @@ from agent_core.backends.langgraph.tools import sdk_tools  # noqa: E402
 from agent_core.contracts.policy import CallResult, Ending, Review, StateUpdate  # noqa: E402
 from agent_core.contracts.unit import DeclaredTools, Unit, UnitResult  # noqa: E402
 from agent_core.contracts.values import ToolSpec  # noqa: E402
-from agent_core.core.brief import VERB_SPECS  # noqa: E402
+from agent_core.core.policy import VERBS, NodePolicy, verb_spec  # noqa: E402
 from agent_core.core.functions import FunctionTool  # noqa: E402
-from agent_core.core.policy import NodePolicy  # noqa: E402
+
+SPECS = {v.name: verb_spec(v) for v in VERBS}
 
 SCHEMA = {"type": "object", "properties": {"key": {"type": "string"}, "value": {}}}
 
@@ -86,7 +87,8 @@ async def play(tmp_path, steps, policy=None, model=ScriptChatModel):
         model(directory=tmp_path), tools=sdk_tools(policy, None), system_prompt=policy.instructions,
         middleware=[PolicyHook(policy, ScriptProvider(), Events())],
     )
-    state = await agent.ainvoke({"messages": [HumanMessage("go")], "node": policy.initial()}, config={"recursion_limit": 30})
+    config = {"recursion_limit": 30, "metadata": {"agent_core_node": "n"}}   # as the backend's run config names it (CD-13)
+    state = await agent.ainvoke({"messages": [HumanMessage("go")], "node": policy.initial()}, config=config)
     return policy, state
 
 
@@ -124,10 +126,10 @@ def _real_policy(*functions):
     """A real `NodePolicy`, offering `state_set`, `state_get` and these functions (each filled with `state`)."""
     contract = SimpleNamespace(name="n", inputs={}, outputs={})
     tools = {f.__name__: FunctionTool(f.__name__, ToolSpec(f.__name__, f.__name__, {"type": "object"}), f, ("state",)) for f in functions}
-    specs = (VERB_SPECS["state_set"], VERB_SPECS["state_get"], *(t.spec for t in tools.values()))
+    specs = (SPECS["state_set"], SPECS["state_get"], *(t.spec for t in tools.values()))
     start = {"inputs": {}, "values": {}, "outputs": {}, "session": {}, "rejections": 0, "ending": None}
     return NodePolicy(
-        SimpleNamespace(contract=contract), label="t", instructions="# Procedure of the node that is running: `n`\n", tools=specs,
+        SimpleNamespace(contract=contract), number=1, instructions="The node's procedure.\n", tools=specs,
         handover=(), opening="go", functions=tools, servers=None, person=None, resources=None, settings=None, events=Events(), start=start,
     )
 

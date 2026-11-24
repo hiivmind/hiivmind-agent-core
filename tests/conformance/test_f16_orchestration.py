@@ -132,6 +132,17 @@ async def test_a_failure_inside_a_fragment_keeps_its_reason_and_message_in_the_r
 
 
 @pytest.mark.feature("F16")
+async def test_a_fragment_step_with_no_transition_fails_no_transition(harness):   # SEQ-10, E6
+    result = await harness({
+        "lookup": LOOKUP, "count": [[["exit", {"outcome": "skipped", "outputs": {}}]]],   # `single` has no row for it
+    }).sequences.run("singles", {"name": "alpha"})
+    assert result.end == "failed"
+    [failure] = [f for f in result.record.failures if f["node"] == "single"]
+    assert failure == {"node": "single", "outcome": "failed", "reason": "no_transition",
+                       "message": "`count` exited `skipped` and the sequence has no transition for it", "outputs": {}}
+
+
+@pytest.mark.feature("F16")
 async def test_a_nodes_own_failure_reason_stays_in_its_outputs_when_the_fragment_goes_on(harness):   # JOB-9a, JOB-13
     own = {"reason": "not found", "revision": "none"}
     result = await harness({

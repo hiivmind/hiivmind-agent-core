@@ -1,8 +1,17 @@
+import dataclasses
+import json
+from pathlib import Path
+
 import pytest
 
 from agent_core.contracts.values import ToolSpec
-from agent_core.core.brief import JOB_VERBS, VERB_SPECS, make_brief
+from agent_core.core.brief import make_brief
+from agent_core.core.policy import VERBS, verb_spec
 from support import FolderSource, load
+
+JOB_VERBS = ["exit", "ask", "state_set", "state_get", "load"]
+
+GOLDENS = Path(__file__).parent / "goldens"
 
 FUNCTION = ToolSpec("lookup", "Look a key up.", {"type": "object"})
 SERVER = ToolSpec("tools__lookup", "Look a key up.", {"type": "object"})
@@ -15,10 +24,26 @@ def brief(instance, name="plain", *, values=None, tools=None, inputs=None):
     )
 
 
-def test_the_job_verbs_and_their_specs():
-    assert JOB_VERBS == ("exit", "ask", "state_set", "state_get", "load")
-    assert set(VERB_SPECS) == {"enter", *JOB_VERBS}
-    assert all(spec.name == name and spec.description and spec.schema["type"] == "object" for name, spec in VERB_SPECS.items())
+def test_a_jobs_instructions_are_those_of_270b974(instance):                               # CD-4
+    assert brief(instance)[0] == (GOLDENS / "plain_instructions.txt").read_text()
+
+
+def test_a_jobs_verb_schemas_are_those_of_270b974(instance):                               # CD-4
+    assert [dataclasses.asdict(t) for t in brief(instance)[1]] == json.loads((GOLDENS / "job_verbs.json").read_text())
+
+
+def test_the_job_verbs_are_the_declared_ones_offered_in_a_job(instance):                   # CD-1, CD-3
+    _, tools, _ = brief(instance)
+    assert [t.name for t in tools] == JOB_VERBS
+    declared = {v.name: v for v in VERBS}
+    assert all(t == verb_spec(declared[t.name]) for t in tools)
+
+
+def test_the_rendered_engine_lists_each_offered_verb_and_no_other(instance):              # CD-3
+    text, _, _ = brief(instance)
+    assert "- `exit(outcome, outputs)`: finish the node" in text
+    assert "- `ask` and `exit` must each be the only call in a response." in text
+    assert "`enter(" not in text
 
 
 def test_the_brief_offers_the_job_verbs_then_the_nodes_tools(instance, broken):           # NODE-6a
@@ -26,7 +51,7 @@ def test_the_brief_offers_the_job_verbs_then_the_nodes_tools(instance, broken): 
     _, tools, _ = brief(load(broken.root), "consult", tools={"lookup": FUNCTION})
     assert [t.name for t in tools] == [*JOB_VERBS, "lookup"]
     _, tools, _ = brief(instance)
-    assert [t.name for t in tools] == list(JOB_VERBS)
+    assert [t.name for t in tools] == JOB_VERBS
 
 
 def test_a_server_tool_is_declared_keyed_and_offered_under_one_name(instance):

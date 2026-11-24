@@ -13,14 +13,15 @@ SECOND = [[["crash_once", {}]], [["exit", {"outcome": "done", "outputs": {"total
 
 
 @pytest.mark.feature("F7")
-async def test_finished_steps_are_not_run_again_on_resume(harness, elsewhere, tmp_path):
+async def test_finished_steps_are_not_run_again_on_resume(harness, elsewhere, tmp_path, fixture_run_dir):
     scripts = {"lookup": FIRST, "count": SECOND}
     run = tmp_path / "runs" / "lookup_then_count-20261119T000000Z-abc123"
     run.mkdir(parents=True)
-    (run / "crash-once").write_text("")
+    marker = fixture_run_dir / "crash-once"   # `crash_once` is a function: it reads the directory the test gave it (Q5)
+    marker.write_text("")
     died = elsewhere(scripts, "lookup_then_count", run.name, {"name": "alpha"})
     assert died.returncode == 3, died.stderr[-2000:]
-    assert not (run / "crash-once").exists()   # the second node ran, and ended the process in `crash_once`
+    assert not marker.exists()   # the second node ran, and ended the process in `crash_once`
 
     resumed = harness(scripts)
     result = await resumed.sequences.resume(run.name)

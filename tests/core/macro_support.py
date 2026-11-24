@@ -98,7 +98,7 @@ class Toy:
     def features(self):
         raise NotImplementedError
 
-    def servers(self, declared, root):
+    def servers(self, declared, root, env):
         raise NotImplementedError
 
     async def close(self) -> None:

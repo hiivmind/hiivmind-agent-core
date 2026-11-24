@@ -102,7 +102,10 @@ class Jobs:
             command += ["--settings", str(file)]
         for key, value in (params or {}).items():
             command += ["--param", f"{key}={value}"]
-        environment = {**os.environ, "AGENT_CORE_SCRIPTED_SCRIPTS": str(self.scripts(run, scripts)), **(env or {})}
+        environment = {  # the fixture's own functions and checks read the run directory from the environment (Q5)
+            **os.environ, "AGENT_CORE_SCRIPTED_SCRIPTS": str(self.scripts(run, scripts)), "AGENT_CORE_RUN_DIR": str(run_dir),
+            **(env or {}),
+        }
         return command + list(args), environment, run_dir
 
     def __call__(self, name, **options) -> Finished:

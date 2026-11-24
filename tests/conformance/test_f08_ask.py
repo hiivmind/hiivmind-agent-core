@@ -20,8 +20,8 @@ class Person:
     async def tell(self, text):
         self.told.append(text)
 
-    async def ask(self, question, label=""):
-        self.asked.append((label, question))
+    async def ask(self, question):
+        self.asked.append((f"{question.node}#{question.number}", question.text))
         return self.answer
 
 
@@ -54,9 +54,9 @@ async def test_ask_must_be_the_only_call_of_its_response_and_the_person_is_not_a
 
 
 class Slow(Person):
-    async def ask(self, question, label=""):
+    async def ask(self, question):
         await asyncio.sleep(2)
-        return await super().ask(question, label)
+        return await super().ask(question)
 
 
 @pytest.mark.feature("F8")

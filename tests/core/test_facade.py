@@ -16,6 +16,7 @@ from agent_core.contracts import facade
 from agent_core.contracts.errors import FeatureNotSupported, RunCannotStart, ToolServerError
 from agent_core.contracts.events import Event, ModelResponded, NodeStarted, ToolReturned
 from agent_core.contracts.matrix import Entry, Feature
+from agent_core.contracts.person import Question
 from agent_core.contracts.registry import REGISTERED_BACKENDS
 from agent_core.contracts.values import Message, Outcome, Usage
 from agent_core.core.registry import BACKENDS
@@ -325,32 +326,46 @@ async def test_open_stops_with_run_cannot_start_for_what_it_cannot_load(toy):
         agent_core.open(FIXTURE / "instance.yaml", settings=[ALPHA], params={"BOGUS": "1"}, **runs)
 
 
-async def test_open_and_close_bring_the_instances_directory_onto_the_path_and_back(toy, open_harness):
+async def test_open_leaves_sys_path_as_it_was(toy, open_harness):                           # RP-3, P7
     toy()
-    root = str(FIXTURE.resolve())
     before = list(sys.path)
     with pytest.raises(RunCannotStart):
         agent_core.open(FIXTURE / "instance.yaml", backend="toy")
     assert sys.path == before
     harness = open_harness(FIXTURE, **spike())
-    assert sys.path[0] == root
+    assert sys.path == before
     await harness.close()
     assert sys.path == before
 
 
-async def test_a_run_sets_the_instance_and_run_directory_and_gives_them_back_when_it_ends(toy, open_harness, tmp_path, monkeypatch):
+async def test_a_run_gives_its_servers_the_instance_and_run_directory_and_leaves_the_process_alone(toy, open_harness, tmp_path, monkeypatch):   # E7, RP-1
     monkeypatch.delenv("AGENT_CORE_RUN_DIR", raising=False)
     monkeypatch.setenv("AGENT_CORE_INSTANCE", "before")
     backend = toy(PLAIN, raises={"locate": RuntimeError("boom")})
     harness = open_harness(FIXTURE, **spike())
     await harness.nodes.run("plain", {})
-    assert backend.environment == [
-        {"AGENT_CORE_INSTANCE": str(FIXTURE.resolve()), "AGENT_CORE_RUN_DIR": str(tmp_path / "runs")}
-    ]
-    assert os.environ["AGENT_CORE_INSTANCE"] == "before" and "AGENT_CORE_RUN_DIR" not in os.environ
-    with pytest.raises(RuntimeError):   # a run that raises gives them back too
+    given = backend.servers_env[-1]
+    assert given["AGENT_CORE_INSTANCE"] == str(FIXTURE.resolve()) and given["AGENT_CORE_RUN_DIR"] == str(tmp_path / "runs")
+    assert backend.environment == [{"AGENT_CORE_INSTANCE": "before"}]   # what the process held while the node ran
+    with pytest.raises(RuntimeError):   # Review Focus 5: a run that raises leaves it as it was too
         await harness.nodes.run("locate", {"source": "polars"})
     assert os.environ["AGENT_CORE_INSTANCE"] == "before" and "AGENT_CORE_RUN_DIR" not in os.environ
+
+
+async def test_a_function_that_reads_the_run_directory_from_the_environment_is_told_it_failed(toy, open_harness, copy, monkeypatch):   # E8, Q5
+    monkeypatch.delenv("AGENT_CORE_RUN_DIR", raising=False)
+    copy.frontmatter("plain", **{"allowed-tools": "[note]"})
+    toy({"plain": [[("note", {})], [("exit", {"outcome": "done", "outputs": {"done_work": "w"}})]]})
+    harness = open_harness(copy.root, **spike())
+
+    def note(state):
+        """Write a note into the run directory."""
+        return os.environ["AGENT_CORE_RUN_DIR"]
+
+    harness.tools.register(note)
+    await harness.nodes.run("plain", {})
+    [result] = [e for e in harness.events.record() if isinstance(e, ToolReturned) and e.call.name == "note"]
+    assert (result.text, result.error) == ("error: note raised KeyError: 'AGENT_CORE_RUN_DIR'", True)
 
 
 async def test_a_harness_that_closes_after_another_opened_leaves_that_harness_its_own_run_directory(toy, open_harness, tmp_path):
@@ -436,7 +451,7 @@ async def test_a_person_is_a_person_or_a_name_the_registry_knows_checked_when_th
     person = ToyPerson("blue", pause=0)
     by_object = open_harness(FIXTURE, **spike(person=person))
     assert (await by_object.nodes.run("asker", {"who": "polars"})).exit == "done"
-    assert person.asked == [("asker#1 polars", "Which colour?")]
+    assert person.asked == [Question("Which colour?", "asker", 1, {"who": "polars"})]
     with pytest.raises(RunCannotStart, match="no person `ghost`; persons are: nobody, terminal"):
         open_harness(FIXTURE, **spike(person="ghost"))
 
@@ -447,7 +462,7 @@ async def test_a_person_a_client_registers_under_a_known_name_is_the_one_the_nex
     other = ToyPerson("green", pause=0)
     named.extensions.register("person", "nobody", lambda: other)
     await named.nodes.run("asker", {"who": "ibis"})
-    assert other.asked == [("asker#1 ibis", "Which colour?")]
+    assert other.asked == [Question("Which colour?", "asker", 1, {"who": "ibis"})]
 
 
 async def test_an_extension_of_an_unknown_kind_is_refused(toy, open_harness):
@@ -533,7 +548,7 @@ async def test_a_sequence_run_gives_its_result_and_the_record_of_the_run(toy, op
     assert re.fullmatch(r"plain_run-\d{8}T\d{6}Z-[0-9a-f]{6}", result.run_id)
     assert result == facade.SequenceResult(
         "done", {"done_work": "plain-work"}, [{"step": 1, "name": "plain", "outcome": "done"}], result.run_id,
-        {"done_work": "plain-work"}, result.record,
+        {"done_work": "plain-work"}, result.record, tmp_path / "runs" / result.run_id,
     )
     run_dir = tmp_path / "runs" / result.run_id
     assert run_dir.is_dir() and (tmp_path / "runs" / "journal.sqlite").is_file()
@@ -649,10 +664,31 @@ async def test_two_fan_out_runs_that_ask_are_put_one_question_at_a_time_with_the
     result = await harness.sequences.run("ask_all", {"names": ["polars", "ibis"]})
     assert result.end == "done" and result.facts["colours"] == [{"colour": "red"}, {"colour": "red"}]
     assert person.most == 1                                                      # never two questions open at once
-    labels = [label.split(" ") for label, _ in person.asked]   # each question with its run's label and its input
-    assert sorted(l[0] for l in labels) == ["asker#1", "asker#2"] and sorted(l[1] for l in labels) == ["ibis", "polars"]
-    assert [q for _, q in person.asked] == ["Which colour?", "Which colour?"]
+    asked = sorted((q.node, q.number, dict(q.inputs)) for q in person.asked)   # each question with its run's number and input
+    assert [(node, number) for node, number, _ in asked] == [("asker", 1), ("asker", 2)]
+    assert sorted(inputs["who"] for _, _, inputs in asked) == ["ibis", "polars"]
+    assert [q.text for q in person.asked] == ["Which colour?", "Which colour?"]
     assert result.record.attended is True
+
+
+async def test_a_run_that_waits_while_it_starts_is_asked_with_its_own_number(toy, open_harness):   # RP-8, final review
+    entered, both = [], asyncio.Event()
+
+    class Waiting:
+        async def build(self, request):   # each run waits here until the other has started too
+            entered.append(request.node)
+            if len(entered) == 2:
+                both.set()
+            await both.wait()
+            return ()
+
+    toy({"asker": ASK["asker"]})
+    person = ToyPerson("red", pause=0)
+    harness = open_harness(FIXTURE, **spike(person=person))
+    harness.extensions.register("context", "none", Waiting)
+    await asyncio.gather(harness.nodes.run("asker", {"who": "polars"}), harness.nodes.run("asker", {"who": "ibis"}))
+    started = sorted(e.label for e in harness.events.record() if isinstance(e, NodeStarted))
+    assert sorted(f"{q.node}#{q.number}" for q in person.asked) == started == ["asker#1", "asker#2"]
 
 
 async def test_a_fan_out_that_asks_with_nobody_there_ends_needs_input(toy, open_harness, asking):   # JOB-6
@@ -698,7 +734,7 @@ async def test_a_relative_run_directory_of_a_rerun_is_resolved_before_the_enviro
     first = await harness.sequences.run("chain", {"scan_results": [["e1"]]})
     monkeypatch.chdir(tmp_path)
     await harness.sequences.rerun(first.run_id, 2, run_dir=Path("again"))
-    assert backend.environment[-1]["AGENT_CORE_RUN_DIR"] == str(tmp_path / "again") and (tmp_path / "again").is_dir()
+    assert backend.servers_env[-1]["AGENT_CORE_RUN_DIR"] == str(tmp_path / "again") and (tmp_path / "again").is_dir()
 
 
 async def test_the_record_names_the_sequence_run_fresh_resumed_and_rerun(toy, open_harness):   # JOB-9a

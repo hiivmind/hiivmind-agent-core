@@ -58,10 +58,10 @@ def test_a_name_that_is_not_a_sequence_exits_2_listing_the_sequences(job):      
     one_line(ran, "error: no sequence `no_such_sequence`; the sequences are: ask_one, plain_run")
 
 
-FROZEN = (
-    "import sys; from datetime import datetime, timezone; import agent_core.cli as cli\n"
+FROZEN = (   # the run id is the facade's (RP-7): its clock is the one frozen
+    "import sys; from datetime import datetime, timezone; import agent_core.core.facade as facade; import agent_core.cli as cli\n"
     "class Frozen:\n    @staticmethod\n    def now(tz=None):\n        return datetime(2026, 11, 14, 1, 2, 3, tzinfo=timezone.utc)\n"
-    "cli.datetime = Frozen\nsys.exit(cli.main(sys.argv[1:]))\n"
+    "facade.datetime = Frozen\nsys.exit(cli.main(sys.argv[1:]))\n"
 )
 
 
@@ -111,7 +111,8 @@ def test_a_resumed_step_writes_its_files_into_the_run_directory_asked_for(tmp_pa
     crashed = jobs("refresh", env={"SEQ_CRASH": "verify"})
     assert crashed.code == 3
     output = tmp_path / "output"
-    done = jobs("refresh", args=["--resume", "run", "--run-dir", str(output)])
+    # the fixture's tool is a function: it writes where the environment says, which the test sets to the run's (Q5)
+    done = jobs("refresh", args=["--resume", "run", "--run-dir", str(output)], env={"AGENT_CORE_RUN_DIR": str(output)})
     assert done.code == 0 and done.out.startswith("run run\n"), done.out
     assert read_record(output)["run_id"] == "run"
     resumed = [json.loads(line) for line in (output / "calls.jsonl").read_text().splitlines()]   # a tool of the resumed step wrote it
@@ -190,14 +191,14 @@ def test_no_ask_returns_needs_input_even_at_a_terminal(job):
 
 SIBLINGS = {
     "tools/sources.py": "KINDS = ['docs', 'api']\n",
-    "tools/status.py": "from tools.sources import KINDS\n\n\ndef status(state):\n    \"\"\"Say which kinds there are.\"\"\"\n"
+    "tools/status.py": "from .sources import KINDS\n\n\ndef status(state):\n    \"\"\"Say which kinds there are.\"\"\"\n"
                        "    state['done_work'] = ','.join(KINDS)\n    return {'kinds': KINDS}\n",
 }
 KINDS_NODE = "---\nname: plain\ndescription: Say the kinds.\ninputs: {}\noutputs:\n  done_work: {type: string, description: the kinds}\n" \
              "exits: [done, failed]\nallowed-tools: [status]\n---\n# Plain\n\n## Steps\n\n1. CALL `status`.\n2. EXIT `done`.\n"
 
 
-def test_an_instances_files_import_each_other_by_name_through_the_command(job, tmp_path):        # review 1
+def test_an_instances_files_import_each_other_relatively_through_the_command(job, tmp_path):        # review 1, E9
     script = [[["status", {}]], [["exit", {"outcome": "done", "outputs": {"done_work": "docs,api"}}]]]
     command, environment, run_dir = job.jobs.command(
         "plain_run", settings=(ALPHA,), scripts={"plain": script}, with_tool="status: tools.status:status",
@@ -208,8 +209,17 @@ def test_an_instances_files_import_each_other_by_name_through_the_command(job, t
     assert read_record(run_dir)["facts"]["done_work"] == "docs,api"
 
 
+def test_an_absolute_sibling_import_does_not_load(job):                                           # E9, RP-3
+    absolute = {**SIBLINGS, "tools/status.py": SIBLINGS["tools/status.py"].replace("from .sources", "from tools.sources")}
+    ran = job(with_tool="status: tools.status:status", files=absolute)
+    assert ran.code == 2 and ran.out == (
+        'error: instance.yaml: tool "status": cannot import tools.status:status: '
+        "ModuleNotFoundError: No module named 'tools'\n"
+    )
+
+
 def test_a_tool_file_that_fails_to_import_says_why_and_exits_two(job):                          # review 1, 3
-    ran = job(with_tool="status: tools.status:status", files={"tools/status.py": "from tools.nothing import X\n"})
+    ran = job(with_tool="status: tools.status:status", files={"tools/status.py": "from .nothing import X\n"})
     assert ran.code == 2 and ran.out.count("\n") == 1
     assert ran.out.startswith('error: instance.yaml: tool "status": cannot import tools.status:status: ModuleNotFoundError')
     assert "tools.nothing" in ran.out
@@ -261,3 +271,28 @@ def test_a_param_for_a_secret_setting_is_written_masked(job):                   
     assert code == 0 and record["params"] == {"GITHUB_TOKEN": "********", "BRANCH_PREFIX": "mine"}
     assert "ghp_very_secret" not in json.dumps(record)
 
+
+# --- the run record ---------------------------------------------------------------------------------------------------
+
+STAMPED = """
+  stamped:
+    description: Stamp the time, then run the plain node.
+    checks:
+      - {tool: stamp, message: "The stamp did not take."}
+    start: plain
+    transitions:
+      plain: {done: end, failed: end}
+"""
+STAMPS = "from datetime import datetime, timezone\n\n\ndef stamp(state):\n    state['checked_at'] = datetime.now(timezone.utc)\n    return True\n"
+
+
+def test_a_record_that_cannot_be_written_exits_one_and_says_why(job):                        # E10, Q7
+    ran = job("stamped", with_tool="stamp: stamps:stamp", with_lines=STAMPED, files={"stamps.py": STAMPS})
+    last = ran.out.splitlines()[-1]
+    assert ran.code == 1 and last.startswith("error: the run record of `"), ran.out
+    assert "facts: Object of type datetime is not JSON serializable" in last
+
+
+def test_a_run_that_raised_still_writes_its_record_and_exits_one(job):                        # Review Focus 5
+    ran = job(scripts={"plain": None})   # no script for `plain`: the backend raises when the node runs
+    assert ran.code == 1 and ran.record["end_state"] == "failed"

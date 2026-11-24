@@ -3,6 +3,7 @@
 import pytest
 
 from agent_core.contracts.events import ModelResponded, ToolReturned
+from agent_core.contracts.values import HarnessReason
 
 EXIT = [["exit", {"outcome": "done", "outputs": {}}]]
 LOOKUP = [["lookup_revision", {"name": "alpha"}]]
@@ -29,6 +30,7 @@ async def test_a_model_that_stops_without_an_exit_fails_the_node_with_what_it_sa
     outcome = await harness({"lookup": ["I cannot do that."]}).nodes.run("lookup", {"name": "alpha"})
     assert (outcome.exit, outcome.outputs, outcome.reason) == ("failed", {}, "no_exit")
     assert outcome.detail == {"said": "I cannot do that."}
+    assert outcome.reason is HarnessReason.NO_EXIT   # E5: the enum, and its text
 
 
 @pytest.mark.feature("F1")

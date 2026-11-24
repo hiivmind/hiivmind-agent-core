@@ -36,15 +36,17 @@ class Toy:
         self.handovers: list[tuple] = []
         self.served: dict | None = None
         self.sources: list[Watched] = []         # the server sources the harness had it make, one for each run
-        self.environment: list[dict] = []        # AGENT_CORE_* as each unit saw them
+        self.environment: list[dict] = []        # AGENT_CORE_* in the process as each unit ran
+        self.servers_env: list[dict] = []        # the environment each server source was made with
         self.closed = False
 
     def features(self):
         return self.matrix
 
-    def servers(self, declared, root):
+    def servers(self, declared, root, env):
         self.served = dict(declared)
-        self.sources.append(Watched(declared, dict(os.environ), root))
+        self.servers_env.append(dict(env))
+        self.sources.append(Watched(declared, dict(env), root))
         return self.sources[-1]
 
     async def run_fragment(self, unit):
@@ -95,18 +97,18 @@ class ToyPerson:
 
     def __init__(self, answer="red", pause=0.05):
         self.answer, self.pause = answer, pause
-        self.asked: list[tuple[str, str]] = []   # (label, question)
+        self.asked: list = []   # the questions, as put
         self.told: list[str] = []
         self.open = self.most = 0
 
     async def tell(self, text):
         self.told.append(text)
 
-    async def ask(self, question, label=""):
+    async def ask(self, question):
         self.open += 1
         self.most = max(self.most, self.open)
         try:
-            self.asked.append((label, question))
+            self.asked.append(question)
             await asyncio.sleep(self.pause)  # long enough for a second run to reach its own question meanwhile
             return self.answer
         finally:

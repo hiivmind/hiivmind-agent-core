@@ -29,6 +29,12 @@ def test_a_node_with_no_allowed_tools_line_has_none(instance):          # NODE-6
     assert instance.nodes["plain"].allowed_tools == ()
 
 
+def test_a_nodes_output_validators_are_built_at_load(instance):                           # CD-11
+    shape = instance.nodes["shape"]
+    assert shape.outputs_on_done.schema["required"] == ["count"]
+    assert "reason" in shape.outputs_otherwise.schema["properties"]
+
+
 def test_a_node_file_is_read_from_its_path(instance, sequences):
     assert instance.nodes["plain"].file == "nodes/plain.md"
     assert sequences.nodes["wrap"].file == "nodes/wrap.md"

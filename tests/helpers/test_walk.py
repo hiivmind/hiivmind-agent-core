@@ -4,6 +4,7 @@ from walking import Nodes, names
 
 from agent_core.contracts.registry import REGISTERED
 from agent_core.contracts.unit import UnitResult
+from agent_core.contracts.values import HarnessReason
 from agent_core.contracts.walk import StepRef
 from agent_core.helpers.walk import walk_fragment
 
@@ -168,12 +169,12 @@ async def test_a_fragments_exit_is_its_last_steps_outcome(port):                
     assert r.exit == "failed" and r.steps[-1]["name"] == "close" and r.outputs == {"wrapped": "yes"}
 
 
-async def test_an_outcome_the_fragment_has_no_row_for_ends_it_failed_naming_it(port):      # SEQ-10
+async def test_a_fragment_step_with_no_transition_fails_no_transition(port):               # SEQ-10, E6
     nodes = Nodes(wrap={"outcome": "declined", "outputs": {}})
     p = port(nodes=nodes)
     r = await walk_fragment(p, p.topology.fragments["tail"], {})
-    assert nodes.names == ["wrap"] and r.exit == "failed"
-    assert "`wrap`" in r.reason and "`declined`" in r.reason
+    assert nodes.names == ["wrap"] and r.exit == "failed" and r.reason is HarnessReason.NO_TRANSITION
+    assert r.detail == {"message": "`wrap` exited `declined` and the sequence has no transition for it"}
 
 
 async def test_a_stop_in_a_fragment_ends_it_stopped(port):                                  # SEQ-7
