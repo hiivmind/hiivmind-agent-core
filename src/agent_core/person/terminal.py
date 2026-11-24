@@ -1,6 +1,7 @@
 import asyncio
 import weakref
 
+from agent_core.contracts.person import Question
 from agent_core.contracts.registry import register
 
 _LOCKS: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, asyncio.Lock]" = weakref.WeakKeyDictionary()
@@ -21,10 +22,11 @@ class Terminal:
     async def tell(self, text: str) -> None:
         print(text, flush=True)
 
-    async def ask(self, question: str, label: str = "") -> str | None:
+    async def ask(self, question: Question) -> str | None:
         """One question at a time across the process: nodes running at once take turns while the others keep working."""
         async with _terminal_lock():
             try:
-                return await asyncio.get_running_loop().run_in_executor(None, input, f"[{label}] {question}\n> ")
+                label = " ".join([f"{question.node}#{question.number}", *map(str, question.inputs.values())])
+                return await asyncio.get_running_loop().run_in_executor(None, input, f"[{label}] {question.text}\n> ")
             except EOFError:  # nothing more can be read: nobody is there
                 return None

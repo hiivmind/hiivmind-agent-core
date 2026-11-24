@@ -26,7 +26,7 @@ from agent_core.contracts.errors import FeatureNotSupported, RunCannotStart, Too
 from agent_core.contracts.events import Event, NodeStarted
 from agent_core.contracts.facade import Events, Extensions, Nodes, SequenceResult, Sequences, Tools
 from agent_core.contracts.matrix import Entry, Feature
-from agent_core.contracts.person import Person
+from agent_core.contracts.person import Person, Question
 from agent_core.contracts.policy import NodeState, Policy
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.topology import Check, FragmentDef, NodeContract
@@ -70,18 +70,18 @@ async def _cannot_summarise(system: str, text: str) -> str:
 
 
 class _Asking:
-    """The person, as one node run sees them: a question carries the run's label and the values of its inputs, and is
-    put only when no other question is waiting for its answer (JOB-6)."""
+    """The person, as one node run sees them: a question is put only when no other question is waiting for its answer
+    (JOB-6)."""
 
-    def __init__(self, person: Person, lock: asyncio.Lock, inputs: Mapping):
-        self._person, self._lock, self._inputs = person, lock, inputs
+    def __init__(self, person: Person, lock: asyncio.Lock):
+        self._person, self._lock = person, lock
 
     async def tell(self, text: str) -> None:
         await self._person.tell(text)
 
-    async def ask(self, question: str, label: str = "") -> str | None:
+    async def ask(self, question: Question) -> str | None:
         async with self._lock:
-            return await self._person.ask(question, " ".join([label, *(str(v) for v in self._inputs.values())]))
+            return await self._person.ask(question)
 
 
 class _Recorded:
@@ -219,9 +219,9 @@ class _Run:
             return UnitResult(FAILED, {}, reason=HarnessReason.UNKNOWN_PLACEHOLDER, detail={"detail": str(e)})
         h.hub.emit(NodeStarted(label, node, parts, tuple(spec.name for spec in offered)))
         return NodePolicy(
-            found, label=label, instructions=instructions, tools=offered, handover=tuple(handover), opening=OPENING,
+            found, number=h.started, instructions=instructions, tools=offered, handover=tuple(handover), opening=OPENING,
             functions=self.functions, servers=self.declared.servers,
-            person=_Asking(self.person, h.person_lock, inputs), resources=self.resources, settings=self.settings,
+            person=_Asking(self.person, h.person_lock), resources=self.resources, settings=self.settings,
             events=h.hub, start=state,
         )
 

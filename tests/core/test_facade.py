@@ -16,6 +16,7 @@ from agent_core.contracts import facade
 from agent_core.contracts.errors import FeatureNotSupported, RunCannotStart, ToolServerError
 from agent_core.contracts.events import Event, ModelResponded, NodeStarted, ToolReturned
 from agent_core.contracts.matrix import Entry, Feature
+from agent_core.contracts.person import Question
 from agent_core.contracts.registry import REGISTERED_BACKENDS
 from agent_core.contracts.values import Message, Outcome, Usage
 from agent_core.core.registry import BACKENDS
@@ -450,7 +451,7 @@ async def test_a_person_is_a_person_or_a_name_the_registry_knows_checked_when_th
     person = ToyPerson("blue", pause=0)
     by_object = open_harness(FIXTURE, **spike(person=person))
     assert (await by_object.nodes.run("asker", {"who": "polars"})).exit == "done"
-    assert person.asked == [("asker#1 polars", "Which colour?")]
+    assert person.asked == [Question("Which colour?", "asker", 1, {"who": "polars"})]
     with pytest.raises(RunCannotStart, match="no person `ghost`; persons are: nobody, terminal"):
         open_harness(FIXTURE, **spike(person="ghost"))
 
@@ -461,7 +462,7 @@ async def test_a_person_a_client_registers_under_a_known_name_is_the_one_the_nex
     other = ToyPerson("green", pause=0)
     named.extensions.register("person", "nobody", lambda: other)
     await named.nodes.run("asker", {"who": "ibis"})
-    assert other.asked == [("asker#1 ibis", "Which colour?")]
+    assert other.asked == [Question("Which colour?", "asker", 1, {"who": "ibis"})]
 
 
 async def test_an_extension_of_an_unknown_kind_is_refused(toy, open_harness):
@@ -663,9 +664,10 @@ async def test_two_fan_out_runs_that_ask_are_put_one_question_at_a_time_with_the
     result = await harness.sequences.run("ask_all", {"names": ["polars", "ibis"]})
     assert result.end == "done" and result.facts["colours"] == [{"colour": "red"}, {"colour": "red"}]
     assert person.most == 1                                                      # never two questions open at once
-    labels = [label.split(" ") for label, _ in person.asked]   # each question with its run's label and its input
-    assert sorted(l[0] for l in labels) == ["asker#1", "asker#2"] and sorted(l[1] for l in labels) == ["ibis", "polars"]
-    assert [q for _, q in person.asked] == ["Which colour?", "Which colour?"]
+    asked = sorted((q.node, q.number, dict(q.inputs)) for q in person.asked)   # each question with its run's number and input
+    assert [(node, number) for node, number, _ in asked] == [("asker", 1), ("asker", 2)]
+    assert sorted(inputs["who"] for _, _, inputs in asked) == ["ibis", "polars"]
+    assert [q.text for q in person.asked] == ["Which colour?", "Which colour?"]
     assert result.record.attended is True
 
 

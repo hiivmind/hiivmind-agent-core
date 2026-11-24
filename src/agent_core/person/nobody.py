@@ -1,3 +1,4 @@
+from agent_core.contracts.person import Question
 from agent_core.contracts.registry import register
 
 
@@ -8,5 +9,5 @@ class Nobody:
     async def tell(self, text: str) -> None:
         pass
 
-    async def ask(self, question: str, label: str = "") -> str | None:
+    async def ask(self, question: Question) -> str | None:
         return None

@@ -97,18 +97,18 @@ class ToyPerson:
 
     def __init__(self, answer="red", pause=0.05):
         self.answer, self.pause = answer, pause
-        self.asked: list[tuple[str, str]] = []   # (label, question)
+        self.asked: list = []   # the questions, as put
         self.told: list[str] = []
         self.open = self.most = 0
 
     async def tell(self, text):
         self.told.append(text)
 
-    async def ask(self, question, label=""):
+    async def ask(self, question):
         self.open += 1
         self.most = max(self.most, self.open)
         try:
-            self.asked.append((label, question))
+            self.asked.append(question)
             await asyncio.sleep(self.pause)  # long enough for a second run to reach its own question meanwhile
             return self.answer
         finally:

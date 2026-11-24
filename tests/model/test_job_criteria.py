@@ -19,8 +19,8 @@ class Person:
     async def tell(self, text):
         self.told.append(text)
 
-    async def ask(self, question, label=""):
-        self.asked.append((label, question))
+    async def ask(self, question):
+        self.asked.append((f"{question.node}#{question.number}", question.text))
         return self.answer
 
 

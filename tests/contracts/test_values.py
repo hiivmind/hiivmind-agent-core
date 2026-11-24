@@ -52,6 +52,5 @@ def test_handover_request_is_frozen():
         h.node = "x"
 
 
-def test_person_ask_takes_a_label():
-    p = inspect.signature(Person.ask).parameters
-    assert list(p) == ["self", "question", "label"] and p["label"].default == ""
+def test_person_ask_takes_a_question():                                                     # RP-8
+    assert list(inspect.signature(Person.ask).parameters) == ["self", "question"]

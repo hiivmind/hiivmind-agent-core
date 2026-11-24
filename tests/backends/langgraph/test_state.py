@@ -129,7 +129,7 @@ def _real_policy(*functions):
     specs = (SPECS["state_set"], SPECS["state_get"], *(t.spec for t in tools.values()))
     start = {"inputs": {}, "values": {}, "outputs": {}, "session": {}, "rejections": 0, "ending": None}
     return NodePolicy(
-        SimpleNamespace(contract=contract), label="t", instructions="# Procedure of the node that is running: `n`\n", tools=specs,
+        SimpleNamespace(contract=contract), number=1, instructions="The node's procedure.\n", tools=specs,
         handover=(), opening="go", functions=tools, servers=None, person=None, resources=None, settings=None, events=Events(), start=start,
     )
 

@@ -10,6 +10,7 @@ from support import FIXTURE, FolderSource
 from agent_core.contracts.errors import ToolError, ToolServerError
 from agent_core.contracts.events import NodeEnded
 from agent_core.contracts.loading import load_module
+from agent_core.contracts.person import Question
 from agent_core.contracts.policy import NodeState, merge
 from agent_core.contracts.values import ModelResponse, ToolCall, ToolSpec
 from agent_core.core.policy import VERBS, NodePolicy, together, verb_spec
@@ -74,8 +75,8 @@ class Answering:
     async def tell(self, text):
         pass
 
-    async def ask(self, question, label=""):
-        self.asked.append((question, label))
+    async def ask(self, question):
+        self.asked.append(question)
         return self.answer
 
 
@@ -128,7 +129,7 @@ def made(instance, settings, run_dir):
     """`made(node, inputs, ...)`: a policy of a fixture node and its start state; `.servers`, `.events` are its ports."""
     module = load_module(FIXTURE, "functions")
 
-    def make(node, inputs=None, *, session=None, values=None, person="nobody", label="n#1", extra=(), settings=settings):
+    def make(node, inputs=None, *, session=None, values=None, person="nobody", number=1, extra=(), settings=settings):
         definition = instance.nodes[node]
         functions = {f.name: f for f in (fn_tool(getattr(module, n)) for n in ("count_words", "read_ledger", "locate"))}
         functions.update({f.name: f for f in extra})
@@ -141,7 +142,7 @@ def made(instance, settings, run_dir):
             rejections=0, ending=None,
         )
         policy = NodePolicy(
-            definition, label=label, instructions="", tools=specs, handover=(), opening="", functions=functions,
+            definition, number=number, instructions="", tools=specs, handover=(), opening="", functions=functions,
             servers=servers, person=person, resources=Files(), settings=settings, events=events, start=start,
         )
         policy.servers, policy.events, policy.person = servers, events, person
@@ -231,7 +232,7 @@ async def test_an_undeclared_outcome_then_a_wrong_output_still_gets_its_correcti
 
 
 def test_the_policy_names_its_node_and_starts_from_its_state(made):
-    policy = made("refresh", {"sources": "polars"}, label="refresh#3")
+    policy = made("refresh", {"sources": "polars"}, number=3)
     assert policy.node == "refresh" and policy.label == "refresh#3"
     assert policy.initial() == {"inputs": {"sources": "polars"}, "values": {}, "outputs": {}, "session": {},
                                 "rejections": 0, "ending": None}
@@ -488,11 +489,11 @@ async def test_ask_with_nobody_there_ends_needs_input(made):                    
     assert ending["detail"] == {"question": "Which sources should I update?"}
 
 
-async def test_a_person_answers_with_the_run_label_given_and_the_answer_is_the_result(made):   # JOB-6
+async def test_a_person_is_asked_a_question_with_the_node_its_number_and_inputs(made):   # JOB-6, RP-8
     person = Answering("polars")
-    p = await play(made("refresh", person=person, label="refresh#3"),
+    p = await play(made("refresh", person=person, number=3),
                    [[("ask", {"question": "Which sources should I update?"})], [set_("sources", "polars")]])
-    assert person.asked == [("Which sources should I update?", "refresh#3")]
+    assert person.asked == [Question("Which sources should I update?", "refresh", 3, {})]
     assert p.texts[0] == "polars" and p.state["ending"] is None and p.updates[0] is None
 
 
@@ -534,10 +535,10 @@ async def test_finish_without_an_ending_is_no_exit_with_what_the_model_said(made
 
 
 async def test_finish_emits_node_ended(made):
-    policy = made("shape", label="shape#2")
+    policy = made("shape", number=2)
     p = await play(policy, [[exit_with("done", {"count": 3})]])
     policy.finish(p.state, "")
-    ended = made("silent", label="silent#1")
+    ended = made("silent", number=1)
     ended.finish(ended.initial(), "")
     assert policy.events.seen == [NodeEnded("shape#2", "shape", "done", None)]
     assert ended.events.seen == [NodeEnded("silent#1", "silent", "failed", "no_exit")]

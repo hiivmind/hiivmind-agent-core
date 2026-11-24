@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ValidationError, WithJsonSchema
 
 from agent_core.contracts.errors import ToolError
 from agent_core.contracts.events import EventSink, NodeEnded
-from agent_core.contracts.person import Person
+from agent_core.contracts.person import Person, Question
 from agent_core.contracts.policy import CallResult, Ending, NodeState, Review, StateUpdate
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.tools import ToolSource
@@ -61,7 +61,7 @@ class NodePolicy:
         self,
         definition: NodeDef,
         *,
-        label: str,
+        number: int,  # the node run's number in the harness: its label is `<node>#<number>`
         instructions: str,
         tools: tuple[ToolSpec, ...],
         handover: tuple[Message, ...],
@@ -76,7 +76,8 @@ class NodePolicy:
     ):
         self.definition = definition
         self.node = definition.contract.name
-        self.label = label
+        self.number = number
+        self.label = f"{self.node}#{number}"
         self.instructions = instructions
         self.tools = tools
         self.handover = handover
@@ -187,7 +188,7 @@ class NodePolicy:
 
 async def _ask(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
     question = args["question"]
-    answer = await policy._person.ask(question, policy.label)
+    answer = await policy._person.ask(Question(question, policy.node, policy.number, dict(policy._start["inputs"])))
     if answer is None:  # nobody is there: the job ends and says what it needed (JOB-6)
         ending = Ending(FAILED, {}, reason=HarnessReason.NEEDS_INPUT, detail={"question": question})
         return CallResult("not answered: nobody is there", error=True, update=StateUpdate(ending=ending))
