@@ -10,8 +10,7 @@ from collections.abc import Awaitable, Callable, Iterable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
-from jsonschema import Draft202012Validator
-from pydantic import BaseModel, Field, WithJsonSchema
+from pydantic import BaseModel, Field, ValidationError, WithJsonSchema
 
 from agent_core.contracts.errors import ToolError
 from agent_core.contracts.events import EventSink, NodeEnded
@@ -28,12 +27,7 @@ from agent_core.core.instance import NodeDef
 if TYPE_CHECKING:
     from agent_core.core.functions import FunctionTool
 
-ALONE = {"ask", "enter", "exit"}  # each of these must be the only call in a response (VERB-6)
-
-TOGETHER = (
-    "refused: `ask`, `enter` and `exit` must be the only call in a response. "
-    "None of the calls in this response ran. Send them again, separately."
-)
+CORRECTIONS = 1  # JOB-7b: outputs that fail the schema are returned once for correction
 
 _Object = Annotated[dict, WithJsonSchema({"type": "object"})]
 
@@ -52,6 +46,14 @@ def joined(names: Iterable[str]) -> str:
     """The names sorted and in backticks: "`ask` and `exit`", or "`ask`, `enter` and `exit`"."""
     quoted = [f"`{n}`" for n in sorted(names)]
     return quoted[0] if len(quoted) == 1 else f"{', '.join(quoted[:-1])} and {quoted[-1]}"
+
+
+def together(names: Iterable[str]) -> str:
+    """The refusal of a response that holds an alone verb beside another call (VERB-6a, VERB-6b)."""
+    return (
+        f"refused: {joined(names)} must be the only call in a response. "
+        "None of the calls in this response ran. Send them again, separately."
+    )
 
 
 class NodePolicy:
@@ -98,8 +100,9 @@ class NodePolicy:
         calls = response.calls
         if state["ending"] is not None:
             return Review({c.id: "not run: the node run has ended" for c in calls})
-        if len(calls) > 1 and any(c.name in ALONE for c in calls):
-            return Review({c.id: TOGETHER for c in calls})
+        if len(calls) > 1 and any(c.name in _BY_NAME and _BY_NAME[c.name].alone for c in calls):
+            refusal = together(v.name for v in VERBS if v.alone and v.name in self._offered)
+            return Review({c.id: refusal for c in calls})
         return Review(
             {
                 c.id: f"refused: `{c.name}` is not declared by the node that is running"
@@ -118,6 +121,12 @@ class NodePolicy:
         name, args = call.name, call.args
         verb = _BY_NAME.get(name)
         if verb is not None and verb.body is not None:
+            if verb.checked:
+                try:
+                    args = verb.args.model_validate(args).model_dump()
+                except ValidationError as e:  # the model's to correct, as a wrong outcome is (Q3)
+                    why = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'arguments'}: {err['msg']}" for err in e.errors())
+                    return CallResult(f"error: `{name}`: {why}", error=True)
             return await verb.body(self, args, state)
         if name in self._functions:
             return self._function(self._functions[name], args, state)
@@ -213,20 +222,11 @@ async def _exit(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
         )
     if isinstance(outputs, dict):
         given = {**state["outputs"], **outputs}  # what was recorded while the node ran, then what EXIT carries (JOB-7a)
-        done = outcome == "done"
-        schema = {
-            "type": "object",
-            "properties": definition.output_schemas if done else {**definition.output_schemas, "reason": {"type": "string"}},
-            "additionalProperties": False,
-            "required": list(contract.outputs) if done else [],
-        }
-        errors = [
-            f"{'/'.join(map(str, e.path)) or 'outputs'}: {e.message}"
-            for e in Draft202012Validator(schema).iter_errors(given)
-        ]
+        check = definition.outputs_on_done if outcome == "done" else definition.outputs_otherwise
+        errors = [f"{'/'.join(map(str, e.path)) or 'outputs'}: {e.message}" for e in check.iter_errors(given)]
     else:
         given, errors = {}, [f"outputs: {outputs!r} is not of type 'object'"]
-    if errors and state["rejections"] >= 1:  # one correction only (JOB-7b)
+    if errors and state["rejections"] >= CORRECTIONS:
         ending = Ending("failed", {}, reason="invalid_output", detail={"errors": errors})
         return CallResult(f"the outputs do not match the node's output schema: {errors}.", error=True,
                           update=StateUpdate(ending=ending))

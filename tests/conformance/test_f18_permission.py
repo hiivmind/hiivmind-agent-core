@@ -4,8 +4,8 @@ import pytest
 
 from agent_core.contracts.events import ToolReturned
 
-TOGETHER = (
-    "refused: `ask`, `enter` and `exit` must be the only call in a response. "
+TOGETHER = (                                                     # E1: a job offers `ask` and `exit` of the alone verbs
+    "refused: `ask` and `exit` must be the only call in a response. "
     "None of the calls in this response ran. Send them again, separately."
 )
 EXIT = [["exit", {"outcome": "done", "outputs": {"total": 1}}]]

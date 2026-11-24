@@ -3,7 +3,7 @@
 import json
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -39,6 +39,19 @@ class NodeDef:
     preconditions: tuple[Check, ...]
     context: str
     body: str
+    # The checks of the outputs `exit` carries, built once here (JOB-7a, CD-11): with `done`, and with another outcome,
+    # which may carry a `reason` and need not give every output.
+    outputs_on_done: Draft202012Validator = field(compare=False, repr=False)
+    outputs_otherwise: Draft202012Validator = field(compare=False, repr=False)
+
+
+def _outputs(outputs: dict, done: bool) -> Draft202012Validator:
+    return Draft202012Validator({
+        "type": "object",
+        "properties": outputs if done else {**outputs, "reason": {"type": "string"}},
+        "additionalProperties": False,
+        "required": list(outputs) if done else [],
+    })
 
 
 @dataclass(frozen=True)
@@ -145,6 +158,8 @@ def _node(resources: ResourceSource, name: str, file: str) -> NodeDef:
         preconditions=tuple(_check(c) for c in front.get("preconditions") or ()),
         context=front.get("context", "none"),
         body=body,
+        outputs_on_done=_outputs(outputs, done=True),
+        outputs_otherwise=_outputs(outputs, done=False),
     )
 
 

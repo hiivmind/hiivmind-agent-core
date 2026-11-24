@@ -12,11 +12,12 @@ from agent_core.contracts.events import NodeEnded
 from agent_core.contracts.loading import load_module
 from agent_core.contracts.policy import NodeState, merge
 from agent_core.contracts.values import ModelResponse, ToolCall, ToolSpec
-from agent_core.core.policy import ALONE, TOGETHER, VERBS, NodePolicy, verb_spec
+from agent_core.core.policy import VERBS, NodePolicy, together, verb_spec
 from agent_core.core.settings import load_settings
 
 SPECS = {v.name: verb_spec(v) for v in VERBS}
 JOB_VERBS = tuple(v.name for v in VERBS if v.in_job)
+TOGETHER = together(["ask", "exit"])
 
 NOT_RUN = "not run: the node run has ended"
 
@@ -202,6 +203,31 @@ def test_the_verbs_each_have_a_spec_and_three_must_be_alone():
     assert [v.name for v in VERBS] == ["enter", "exit", "ask", "state_set", "state_get", "load"]
     assert all(spec.name == name and spec.description and spec.schema["type"] == "object" for name, spec in SPECS.items())
     assert {v.name for v in VERBS if v.alone} == {"ask", "enter", "exit"}
+
+
+async def test_a_call_beside_exit_in_a_job_is_refused_naming_ask_and_exit(made):       # E1
+    p = await play(made("refresh", {"sources": "polars"}), [[shell("echo both"), exit_with("done", {})]])
+    assert p.texts == ["refused: `ask` and `exit` must be the only call in a response. "
+                       "None of the calls in this response ran. Send them again, separately."] * 2
+
+
+@pytest.mark.parametrize("verb, message", [
+    ("ask", "error: `ask`: question: Field required"),
+    ("state_get", "error: `state_get`: key: Field required"),
+    ("load", "error: `load`: path: Field required"),
+])
+async def test_a_verb_call_missing_an_argument_is_an_error_and_the_node_goes_on(made, verb, message):   # E3, Q3
+    p = await play(made("shape"), [[(verb, {})], [exit_with("failed", {})]])
+    assert p.texts[0] == message and p.errors[0] is True and p.updates[0] is None
+    assert p.state["ending"]["outcome"] == "failed" and p.texts[1] == "exited with `failed`"
+
+
+async def test_an_undeclared_outcome_then_a_wrong_output_still_gets_its_correction(made):   # E4b, CD-7
+    p = await play(made("shape"), [
+        [exit_with("maybe", {})], [exit_with("done", {"count": "three"})], [exit_with("done", {"count": 3})]])
+    assert p.texts[0] == "`maybe` is not an outcome of `shape`; its outcomes are: done, failed, skipped, stopped"
+    assert p.texts[1].endswith("Correct them and EXIT again.")
+    assert p.texts[2] == "exited with `done`"
 
 
 def test_the_policy_names_its_node_and_starts_from_its_state(made):
