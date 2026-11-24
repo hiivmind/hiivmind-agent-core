@@ -12,9 +12,11 @@ from agent_core.contracts.events import NodeEnded
 from agent_core.contracts.loading import load_module
 from agent_core.contracts.policy import NodeState, merge
 from agent_core.contracts.values import ModelResponse, ToolCall, ToolSpec
-from agent_core.core.brief import JOB_VERBS, VERB_SPECS
-from agent_core.core.policy import ALONE, TOGETHER, NodePolicy
+from agent_core.core.policy import ALONE, TOGETHER, VERBS, NodePolicy, verb_spec
 from agent_core.core.settings import load_settings
+
+SPECS = {v.name: verb_spec(v) for v in VERBS}
+JOB_VERBS = tuple(v.name for v in VERBS if v.in_job)
 
 NOT_RUN = "not run: the node run has ended"
 
@@ -130,7 +132,7 @@ def made(instance, settings, run_dir):
         functions = {f.name: f for f in (fn_tool(getattr(module, n)) for n in ("count_words", "read_ledger", "locate"))}
         functions.update({f.name: f for f in extra})
         offered = (*JOB_VERBS, *definition.allowed_tools, *(f.name for f in extra))
-        specs = tuple(VERB_SPECS[n] if n in VERB_SPECS else ToolSpec(n, n, {"type": "object"}) for n in offered)
+        specs = tuple(SPECS[n] if n in SPECS else ToolSpec(n, n, {"type": "object"}) for n in offered)
         servers, events = Servers(), Events()
         person = Answering(None) if person == "nobody" else person
         start = NodeState(
@@ -197,9 +199,9 @@ def get(key):
 
 
 def test_the_verbs_each_have_a_spec_and_three_must_be_alone():
-    assert set(VERB_SPECS) == {"enter", "exit", "ask", "state_set", "state_get", "load"}
-    assert all(spec.name == name and spec.description and spec.schema["type"] == "object" for name, spec in VERB_SPECS.items())
-    assert ALONE == {"ask", "enter", "exit"}
+    assert [v.name for v in VERBS] == ["enter", "exit", "ask", "state_set", "state_get", "load"]
+    assert all(spec.name == name and spec.description and spec.schema["type"] == "object" for name, spec in SPECS.items())
+    assert {v.name for v in VERBS if v.alone} == {"ask", "enter", "exit"}
 
 
 def test_the_policy_names_its_node_and_starts_from_its_state(made):

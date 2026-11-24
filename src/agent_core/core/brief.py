@@ -6,54 +6,22 @@ from importlib.resources import files
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.values import ToolSpec
 from agent_core.core.instance import Instance, NodeDef
+from agent_core.core.policy import VERBS, Verb, joined, verb_spec
 from agent_core.core.templates import render
 
-JOB_VERBS = ("exit", "ask", "state_set", "state_get", "load")  # what a job's node is offered besides its own tools
 INSIDE_A_NODE = "## Inside a node"
 
-VERB_SPECS: dict[str, ToolSpec] = {
-    spec.name: spec
-    for spec in (
-        ToolSpec(
-            "enter",
-            "Enter another node of this instance, with the inputs it declares.",
-            {
-                "type": "object",
-                "properties": {"node": {"type": "string"}, "inputs": {"type": "object"}},
-                "required": ["node"],
-            },
-        ),
-        ToolSpec(
-            "exit",
-            "End the node that is running with one of its outcomes and the outputs it declares.",
-            {
-                "type": "object",
-                "properties": {"outcome": {"type": "string"}, "outputs": {"type": "object"}},
-                "required": ["outcome"],
-            },
-        ),
-        ToolSpec(
-            "ask",
-            "Ask the person a question and wait for the answer.",
-            {"type": "object", "properties": {"question": {"type": "string"}}, "required": ["question"]},
-        ),
-        ToolSpec(
-            "state_set",
-            "Record a value under a name. Whatever is recorded stays for the rest of the node run.",
-            {"type": "object", "properties": {"key": {"type": "string"}, "value": {}}, "required": ["key", "value"]},
-        ),
-        ToolSpec(
-            "state_get",
-            "Read a recorded value by name.",
-            {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]},
-        ),
-        ToolSpec(
-            "load",
-            "Read a file of the instance and return its text.",
-            {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]},
-        ),
+
+def _engine(offered: tuple[Verb, ...]) -> str:
+    """ENGINE.md with its verb list and its alone rule written from the verbs offered (CD-3)."""
+    verbs = "\n".join(f"- `{v.name}({', '.join(v.args.model_fields)})`: {v.meaning}" for v in offered)
+    names = [v.name for v in offered if v.alone]
+    alone = (
+        f"- {joined(names)} must each be the only call in a response. If you send "
+        f"{'either' if len(names) == 2 else 'one of them'} beside another call, none of the calls runs and you must "
+        "send them again, separately."
     )
-}
+    return _asset("ENGINE.md").replace("<!-- verbs -->", verbs).replace("<!-- alone -->", alone)
 
 
 def _asset(name: str) -> str:
@@ -80,7 +48,8 @@ def make_brief(
     for tool in node.allowed_tools:
         if tool not in tools:
             raise ValueError(f"`{name}` declares the tool `{tool}`, which no tool source offers")
-    rules, inside = _asset("ENGINE.md").split(INSIDE_A_NODE, 1)
+    job_verbs = tuple(v for v in VERBS if v.in_job)
+    rules, inside = _engine(job_verbs).split(INSIDE_A_NODE, 1)
     procedure = render(
         node.body,
         file=node.file,
@@ -101,5 +70,5 @@ def make_brief(
             f"The outcomes of this node are: {', '.join(node.contract.outcomes)}.\n\n{procedure}",
         ),
     )
-    offered = (*(VERB_SPECS[verb] for verb in JOB_VERBS), *(tools[tool] for tool in node.allowed_tools))
+    offered = (*(verb_spec(v) for v in job_verbs), *(tools[tool] for tool in node.allowed_tools))
     return "\n\n".join(text for _, text in parts), offered, tuple((source, len(text)) for source, text in parts)

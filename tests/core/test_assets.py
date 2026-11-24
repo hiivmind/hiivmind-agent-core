@@ -8,14 +8,14 @@ def _doc(name):
 def test_engine_document_is_self_contained_and_has_its_sections():                         # ENG-1, ENG-4
     text = _doc("ENGINE.md")
     assert "# Engine rules" in text and "## Inside a node" in text and "http" not in text
-    for verb in ("exit", "ask", "state_set", "state_get", "load"): assert f"`{verb}(" in text
+    assert text.count("<!-- verbs -->") == 1 and text.count("<!-- alone -->") == 1   # rendered from the verbs (CD-3)
     assert "does not change while the run lasts" in text      # the procedure is filled once (TPL-4)
     assert "session:" in text and "node:" in text             # the state shape, in YAML (ENG-2)
 
 
 def test_engine_document_offers_a_job_its_five_verbs_and_no_routing():                      # NODE-6a
     text = _doc("ENGINE.md")
-    assert "## Routing" not in text and "## Diversions" not in text and "`enter(" not in text
+    assert "## Routing" not in text and "## Diversions" not in text and "enter" not in text
     assert text.index("# Engine rules") < text.index("## Inside a node")
 
 

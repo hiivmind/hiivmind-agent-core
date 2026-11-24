@@ -2,16 +2,12 @@
 
 You are an agent run by a small harness. You act only through the tools you are offered. Some are verbs of the harness; the verbs offered to you here are:
 
-- `exit(outcome, outputs)`: finish the node that is running, with one of its outcomes and the outputs it declares.
-- `ask(question)`: ask the person and wait. The tool result is the person's reply. If nobody is there to answer, the run ends and says what it needed.
-- `state_set(key, value)`: record a fact under a name.
-- `state_get(key)`: read a recorded fact. The result is the value, or `not set`.
-- `load(path)`: read a file of the instance and get its text.
+<!-- verbs -->
 - Any other tool is a capability that the node that is running declares. A tool the node does not declare is refused.
 
 Rules for calls:
 
-- `ask` and `exit` must each be the only call in a response. If you send either beside another call, none of the calls runs and you must send them again, separately.
+<!-- alone -->
 - A call that fails returns a result that begins with `error:`. Read it and act on it; it is not the end of the run.
 - Reply in plain text only to say something to the person. Plain text without a tool call does not finish the node: only `exit` does.
 

@@ -6,10 +6,12 @@ returns what changed as a `StateUpdate`.
 
 import copy
 import json
-from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from collections.abc import Awaitable, Callable, Iterable, Mapping
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Annotated, Any
 
 from jsonschema import Draft202012Validator
+from pydantic import BaseModel, Field, WithJsonSchema
 
 from agent_core.contracts.errors import ToolError
 from agent_core.contracts.events import EventSink, NodeEnded
@@ -20,6 +22,7 @@ from agent_core.contracts.tools import ToolSource
 from agent_core.contracts.unit import UnitResult
 from agent_core.contracts.values import Message, ModelResponse, ToolCall, ToolSpec
 from agent_core.core.checks import StateView, written
+from agent_core.core.functions import tool_schema
 from agent_core.core.instance import NodeDef
 
 if TYPE_CHECKING:
@@ -32,6 +35,8 @@ TOGETHER = (
     "None of the calls in this response ran. Send them again, separately."
 )
 
+_Object = Annotated[dict, WithJsonSchema({"type": "object"})]
+
 
 def _text(value: object) -> str:
     return value if isinstance(value, str) else json.dumps(value)
@@ -41,6 +46,12 @@ def _view(state: NodeState) -> StateView:
     """Session facts, then working values, then inputs; a later one hides an earlier of the same name (TOOL-12)."""
     seen = {**state["session"], **state["values"], **state["inputs"]}
     return StateView(copy.deepcopy(seen))
+
+
+def joined(names: Iterable[str]) -> str:
+    """The names sorted and in backticks: "`ask` and `exit`", or "`ask`, `enter` and `exit`"."""
+    quoted = [f"`{n}`" for n in sorted(names)]
+    return quoted[0] if len(quoted) == 1 else f"{', '.join(quoted[:-1])} and {quoted[-1]}"
 
 
 class NodePolicy:
@@ -105,21 +116,9 @@ class NodePolicy:
 
     async def call(self, call: ToolCall, state: NodeState) -> CallResult:
         name, args = call.name, call.args
-        if name == "exit":
-            return self._exit(args.get("outcome"), args.get("outputs") or {}, state)
-        if name == "ask":
-            return await self._ask(args["question"])
-        if name == "state_set":
-            key, value = args["key"], args["value"]
-            return CallResult(f"recorded {key} = {json.dumps(value)}", update=self._update([(key, value)]))
-        if name == "state_get":
-            seen = _view(state)
-            return CallResult(json.dumps(seen[args["key"]]) if args["key"] in seen else "not set")
-        if name == "load":
-            try:
-                return CallResult(self._resources.read(args["path"]))
-            except (OSError, ValueError) as e:
-                return CallResult(f"error: {e}", error=True)
+        verb = _BY_NAME.get(name)
+        if verb is not None and verb.body is not None:
+            return await verb.body(self, args, state)
         if name in self._functions:
             return self._function(self._functions[name], args, state)
         return await self._server(name, args)
@@ -160,48 +159,6 @@ class NodePolicy:
             return CallResult(f"error: {e}", error=True)
         return CallResult(_text(value))
 
-    async def _ask(self, question: str) -> CallResult:
-        answer = await self._person.ask(question, self.label)
-        if answer is None:  # nobody is there: the job ends and says what it needed (JOB-6)
-            ending = Ending("failed", {}, reason="needs_input", detail={"question": question})
-            return CallResult("not answered: nobody is there", error=True, update=StateUpdate(ending=ending))
-        return CallResult(answer)
-
-    def _exit(self, outcome: object, outputs: object, state: NodeState) -> CallResult:
-        definition = self.definition
-        contract = definition.contract
-        if outcome not in contract.outcomes:
-            return CallResult(
-                f"`{outcome}` is not an outcome of `{contract.name}`; its outcomes are: {', '.join(contract.outcomes)}",
-                error=True,
-            )
-        if isinstance(outputs, dict):
-            given = {**state["outputs"], **outputs}  # what was recorded while the node ran, then what EXIT carries (JOB-7a)
-            done = outcome == "done"
-            schema = {
-                "type": "object",
-                "properties": definition.output_schemas if done else {**definition.output_schemas, "reason": {"type": "string"}},
-                "additionalProperties": False,
-                "required": list(contract.outputs) if done else [],
-            }
-            errors = [
-                f"{'/'.join(map(str, e.path)) or 'outputs'}: {e.message}"
-                for e in Draft202012Validator(schema).iter_errors(given)
-            ]
-        else:
-            given, errors = {}, [f"outputs: {outputs!r} is not of type 'object'"]
-        if errors and state["rejections"] >= 1:  # one correction only (JOB-7b)
-            ending = Ending("failed", {}, reason="invalid_output", detail={"errors": errors})
-            return CallResult(f"the outputs do not match the node's output schema: {errors}.", error=True,
-                              update=StateUpdate(ending=ending))
-        if errors:
-            return CallResult(
-                f"the outputs do not match the node's output schema: {errors}. Correct them and EXIT again.",
-                error=True,
-                update=StateUpdate(rejected=True),
-            )
-        return CallResult(f"exited with `{outcome}`", update=StateUpdate(ending=Ending(outcome, given)))
-
     # --- the end of the run ----------------------------------------------------------------------------------
 
     def finish(self, state: NodeState, said: str) -> UnitResult:
@@ -214,3 +171,138 @@ class NodePolicy:
             )
         self._events.emit(NodeEnded(self.label, self.node, result.exit, result.reason))
         return result
+
+
+# --- the verbs ------------------------------------------------------------------------------------------------
+
+
+async def _ask(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
+    question = args["question"]
+    answer = await policy._person.ask(question, policy.label)
+    if answer is None:  # nobody is there: the job ends and says what it needed (JOB-6)
+        ending = Ending("failed", {}, reason="needs_input", detail={"question": question})
+        return CallResult("not answered: nobody is there", error=True, update=StateUpdate(ending=ending))
+    return CallResult(answer)
+
+
+async def _state_set(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
+    key, value = args["key"], args["value"]
+    return CallResult(f"recorded {key} = {json.dumps(value)}", update=policy._update([(key, value)]))
+
+
+async def _state_get(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
+    seen = _view(state)
+    return CallResult(json.dumps(seen[args["key"]]) if args["key"] in seen else "not set")
+
+
+async def _load(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
+    try:
+        return CallResult(policy._resources.read(args["path"]))
+    except (OSError, ValueError) as e:
+        return CallResult(f"error: {e}", error=True)
+
+
+async def _exit(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
+    outcome, outputs = args.get("outcome"), args.get("outputs") or {}
+    definition = policy.definition
+    contract = definition.contract
+    if outcome not in contract.outcomes:
+        return CallResult(
+            f"`{outcome}` is not an outcome of `{contract.name}`; its outcomes are: {', '.join(contract.outcomes)}",
+            error=True,
+        )
+    if isinstance(outputs, dict):
+        given = {**state["outputs"], **outputs}  # what was recorded while the node ran, then what EXIT carries (JOB-7a)
+        done = outcome == "done"
+        schema = {
+            "type": "object",
+            "properties": definition.output_schemas if done else {**definition.output_schemas, "reason": {"type": "string"}},
+            "additionalProperties": False,
+            "required": list(contract.outputs) if done else [],
+        }
+        errors = [
+            f"{'/'.join(map(str, e.path)) or 'outputs'}: {e.message}"
+            for e in Draft202012Validator(schema).iter_errors(given)
+        ]
+    else:
+        given, errors = {}, [f"outputs: {outputs!r} is not of type 'object'"]
+    if errors and state["rejections"] >= 1:  # one correction only (JOB-7b)
+        ending = Ending("failed", {}, reason="invalid_output", detail={"errors": errors})
+        return CallResult(f"the outputs do not match the node's output schema: {errors}.", error=True,
+                          update=StateUpdate(ending=ending))
+    if errors:
+        return CallResult(
+            f"the outputs do not match the node's output schema: {errors}. Correct them and EXIT again.",
+            error=True,
+            update=StateUpdate(rejected=True),
+        )
+    return CallResult(f"exited with `{outcome}`", update=StateUpdate(ending=Ending(outcome, given)))
+
+
+class EnterArgs(BaseModel):
+    node: str
+    inputs: _Object = Field(default_factory=dict)
+
+
+class ExitArgs(BaseModel):
+    outcome: str
+    outputs: _Object = Field(default_factory=dict)
+
+
+class AskArgs(BaseModel):
+    question: str
+
+
+class StateSetArgs(BaseModel):
+    key: str
+    value: Any
+
+
+class StateGetArgs(BaseModel):
+    key: str
+
+
+class LoadArgs(BaseModel):
+    path: str
+
+
+@dataclass(frozen=True)
+class Verb:
+    """A verb of the harness, declared once: its tool spec, its line in the engine document and its body (CD-1)."""
+
+    name: str
+    args: type[BaseModel]
+    description: str  # the tool's description
+    meaning: str  # its line in the engine document
+    alone: bool  # must be the only call in a response (VERB-6)
+    in_job: bool  # offered to a job's node
+    checked: bool  # its arguments are validated before the body runs; `exit` checks its own (CD-7)
+    body: Callable[[NodePolicy, dict, NodeState], Awaitable[CallResult]] | None  # None: comes with sessions
+
+
+VERBS: tuple[Verb, ...] = (
+    Verb("enter", EnterArgs, "Enter another node of this instance, with the inputs it declares.",
+         "enter another node of this instance, with the inputs it declares.",
+         alone=True, in_job=False, checked=True, body=None),
+    Verb("exit", ExitArgs, "End the node that is running with one of its outcomes and the outputs it declares.",
+         "finish the node that is running, with one of its outcomes and the outputs it declares.",
+         alone=True, in_job=True, checked=False, body=_exit),
+    Verb("ask", AskArgs, "Ask the person a question and wait for the answer.",
+         "ask the person and wait. The tool result is the person's reply. "
+         "If nobody is there to answer, the run ends and says what it needed.",
+         alone=True, in_job=True, checked=True, body=_ask),
+    Verb("state_set", StateSetArgs, "Record a value under a name. Whatever is recorded stays for the rest of the node run.",
+         "record a fact under a name.",
+         alone=False, in_job=True, checked=True, body=_state_set),
+    Verb("state_get", StateGetArgs, "Read a recorded value by name.",
+         "read a recorded fact. The result is the value, or `not set`.",
+         alone=False, in_job=True, checked=True, body=_state_get),
+    Verb("load", LoadArgs, "Read a file of the instance and return its text.",
+         "read a file of the instance and get its text.",
+         alone=False, in_job=True, checked=True, body=_load),
+)
+_BY_NAME = {v.name: v for v in VERBS}
+
+
+def verb_spec(verb: Verb) -> ToolSpec:
+    return ToolSpec(verb.name, verb.description, tool_schema(verb.args))
