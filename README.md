@@ -83,7 +83,7 @@ uv sync    # the core, the test tools and the shell server
 | Value | Meaning |
 |---|---|
 | `env` (default) | the provider's key from the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) |
-| `account` | OpenAI only: the ChatGPT plan of the account signed in with `mountainash-auth-openai` (not yet public), for the application `hiivmind-agent-core` |
+| `account` | OpenAI only: the ChatGPT plan of the account signed in with [`mountainash-auth-openai`](https://github.com/mountainash-io/mountainash-auth-openai), for the application `hiivmind-agent-core` |
 
 Sign in once, in a browser; the token is refreshed without a person after that:
 
