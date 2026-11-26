@@ -4,6 +4,8 @@ version = "0.1.0"
 description = "Harness that runs model-driven procedures for jobs"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
+license-files = ["LICENSE"]
 dependencies = [
     "pyyaml",
     "jsonschema",

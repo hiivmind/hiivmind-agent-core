@@ -1,12 +1,12 @@
 # AGENTS.md — hiivmind-agent-core
 
-The agent-core harness: it runs an instance's nodes as jobs and sequences. Its planning (requirements, designs, plans, reviews, backlog) and its principles live in `hiivmind-central`, checked out beside this repository.
+The agent-core harness: it runs an instance's nodes as jobs and sequences. Its planning (requirements, designs, plans, reviews, backlog) and its principles live in `hiivmind-central`, a private repository that maintainers check out beside this one. Without that checkout, skip the paths below.
 
 ## Principles
 
 Read the principles before you design or change nodes, node contracts, sequences, tools or the harness itself:
 
-- **Inventory of every principle, P1–P18:** `../hiivmind-central/01.principles/hiivmind-agent-core/README.md` ([on GitHub](https://github.com/hiivmind/hiivmind-central/blob/main/01.principles/hiivmind-agent-core/README.md)).
+- **Inventory of every principle, P1–P18:** `../hiivmind-central/01.principles/hiivmind-agent-core/README.md`.
 - **How they are governed:** `../hiivmind-central/01.principles/hiivmind-agent-core/PRINCIPLES.md`.
 
 P1–P13 are in §3 of the requirements specification; P14–P18 have a file each in the folder above.

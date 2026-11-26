@@ -4,7 +4,7 @@ A small Python harness that runs model-driven procedures, called nodes, and walk
 
 The old tree (v0) is kept at the tag `v0-final`; it is not in this tree.
 
-Design documents (hiivmind-central, 2026-11-18): [architecture](https://github.com/hiivmind/hiivmind-central/blob/main/04.planning/hiivmind-agent-core/superpowers/specs/2026-11-18-agent-core-architecture.md), [requirements](https://github.com/hiivmind/hiivmind-central/blob/main/04.planning/hiivmind-agent-core/superpowers/specs/2026-11-18-agent-core-requirements.md), [layered facade design](https://github.com/hiivmind/hiivmind-central/blob/main/04.planning/hiivmind-agent-core/superpowers/specs/2026-11-18-agent-core-layered-facade-design.md).
+The design documents (architecture, requirements and the layered facade design, 2026-11-18) are kept in the maintainers' private planning repository; this README and the code are the public record.
 
 ## Layers
 
@@ -83,7 +83,7 @@ uv sync    # the core, the test tools and the shell server
 | Value | Meaning |
 |---|---|
 | `env` (default) | the provider's key from the environment (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`) |
-| `account` | OpenAI only: the ChatGPT plan of the account signed in with [`mountainash-auth-openai`](https://github.com/mountainash-io/mountainash-auth-openai), for the application `hiivmind-agent-core` |
+| `account` | OpenAI only: the ChatGPT plan of the account signed in with `mountainash-auth-openai` (not yet public), for the application `hiivmind-agent-core` |
 
 Sign in once, in a browser; the token is refreshed without a person after that:
 
@@ -112,7 +112,7 @@ The `openai` extra takes `mountainash-auth-openai` and `mountainash-auth-client`
 - **The model tests** (`uv run pytest tests/model -m model`): 7 passed, 5 skipped (the wire tests read Anthropic's transport), 1 failed. The one that fails is `test_a_precondition_written_in_the_procedure_that_is_unmet_fails_the_node`: luna mostly calls `lookup_revision` before it exits `failed`, against "do nothing more" (2 passes in 11 runs; 0 in 6 with the instructions as a `developer` message, so the way they are sent is not the cause). Recorded as luna's result (owner, 2026-11-21). The same tests on `anthropic:claude-haiku-5-5` with its key: 13 passed.
 - **A corpus job** (hiivmind-corpus-agent, `status` on a scratch clone of the Polars corpus, `PUSH=false`, `--no-ask`; the `openai` extra installed into its environment by hand, as its own dependency takes `agent-core[langgraph,anthropic]`): run `status-20261120T214748Z-c2dc7b` ended `done`, exit 0, with 4 model calls. Step `status` → `stale`: source `polars` `behind`, `stale_count` 37, `refresh_needed` true. The clone was unchanged.
 - **Two route facts were found by these runs** and are in `ROUTE` of `mountainash-auth-openai`: a system message is refused (`400 System messages are not allowed`), and a tool sent without `strict` is strict, so the model filled both `head` and `tail` of the filesystem server's `read_text_file` and the server refused the call.
-- **Not yet run: a job a day later with no sign-in in between**, showing the token refreshed without a person (deferred by the owner, 2026-11-21; hiivmind-central backlog 43). The access token held at 2026-11-20T23:51Z expires at 2026-11-21T00:51:43Z, so a run after that must refresh it.
+- **Not yet run: a job a day later with no sign-in in between**, showing the token refreshed without a person (deferred by the owner, 2026-11-21). The access token held at 2026-11-20T23:51Z expires at 2026-11-21T00:51:43Z, so a run after that must refresh it.
 
 ## `agent-core job`
 
