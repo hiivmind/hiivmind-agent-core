@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Tool servers for agent-core instances: the shell server"
 readme = "README.md"
 requires-python = ">=3.12"
+license = "MIT"
 dependencies = ["mcp>=1.30,<2"]
 
 [build-system]
