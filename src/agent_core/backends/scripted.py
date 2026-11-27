@@ -25,6 +25,8 @@ from agent_core.helpers.walk import walk_fragment
 
 _HELPERS = {
     Feature.F1: "the script player",
+    Feature.F6: "the core's session store; a unit in flight runs again from its start",
+    Feature.F17: "the core's routing run (ORC-7)",
     Feature.F2: "core policy",
     Feature.F3: "helpers.mcp",
     Feature.F4: "core policy",
@@ -43,8 +45,6 @@ _NOT_BUILT = {
         (Feature.F10, Feature.F12, Feature.F13, Feature.F14, Feature.F20, Feature.F24), "no model"
     ),
     Feature.F19: "deferred: no consumer in this delivery",
-    Feature.F6: "sessions, step 7",
-    Feature.F17: "sessions, step 7",
     Feature.F22: "reserved",
     Feature.F23: "deferred",
 }
@@ -97,7 +97,7 @@ class ScriptedBackend:
         return json.loads((Path(scripts) / f"{node}.json").read_text())
 
     async def run_node(self, unit: Unit) -> UnitResult:
-        policy = await unit.start(unit.name, unit.inputs)
+        policy = await unit.start(unit.name, unit.inputs, unit.thread)
         if isinstance(policy, UnitResult):  # the node did not start
             return policy
         return await self._play(policy, self._steps(policy.node), unit.events)
@@ -121,9 +121,10 @@ class ScriptedBackend:
                 break
             events.emit(ModelRequested(policy.label, _request(policy, conversation)))
             if isinstance(step, str):  # the model says something and makes no call
-                events.emit(ModelResponded(policy.label, ModelResponse(step, ())))
+                response = ModelResponse(step, ())
+                events.emit(ModelResponded(policy.label, response))
                 said = step
-                reply = policy.stopped(step, state)
+                reply = await policy.responded(response, state)
                 if reply is None:
                     break
                 conversation += [Message("agent", step), Message("user", reply)]
@@ -134,6 +135,7 @@ class ScriptedBackend:
                 calls.append(ToolCall(f"{policy.label}-{made}", name, args))
             response = ModelResponse("", tuple(calls))
             events.emit(ModelResponded(policy.label, response))
+            await policy.responded(response, state)  # before any call of it runs (SS-7); a reply is only for a stop
             review = policy.review(response, state)  # the whole response, before any call of it runs
             updates = []
             for call in calls:
@@ -147,7 +149,7 @@ class ScriptedBackend:
             for update in updates:  # in the response's order, after the last call (CTL-5)
                 if update is not None:
                     state = merge(state, update)
-        return policy.finish(state, said)
+        return await policy.finish(state, said)
 
 
 def _request(policy: Policy, conversation: list[Message]) -> tuple[RequestPart, ...]:

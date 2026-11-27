@@ -5,7 +5,7 @@ import json
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 from .events import Event
 from .values import NodeNote, Outcome
@@ -52,6 +52,16 @@ class SequenceResult:
     summary: object
     record: RunRecord
     run_dir: Path   # where the run kept its files; the CLI writes `record.json` there (RP-6)
+    outputs: dict   # the declared outputs its steps returned, whether or not the run raised (SS-10)
+
+
+@dataclass(frozen=True)
+class SessionResult:
+    session_id: str
+    state: Literal["ended", "waiting"]   # waiting: saved, for a person who has gone; resume it by its id (SS-5)
+    facts: dict
+    record: RunRecord   # this process's part of the session (RP-5)
+    session_dir: Path   # where the session is kept; the CLI writes `record.json` there
 
 
 @runtime_checkable
@@ -81,7 +91,13 @@ class Events(Protocol):
 
 @runtime_checkable
 class Extensions(Protocol):
-    def register(self, kind: str, name: str, provider: object) -> None: ...   # kinds: backend, context, person, resources, journal
+    def register(self, kind: str, name: str, provider: object) -> None: ...   # kinds: backend, context, person, resources, journal, store
+
+
+@runtime_checkable
+class Sessions(Protocol):
+    async def start(self, name: str | None = None, *, session_id: str | None = None) -> SessionResult: ...
+    async def resume(self, session_id: str) -> SessionResult: ...
 
 
 @runtime_checkable
@@ -93,7 +109,7 @@ class Harness(Protocol):
     extensions: Extensions
 
     @property
-    def sessions(self) -> object: ...   # raises FeatureNotSupported
+    def sessions(self) -> Sessions: ...   # raises FeatureNotSupported where the backend builds no sessions (FAC-5)
 
     async def close(self) -> None: ...
     async def __aenter__(self) -> Harness: ...

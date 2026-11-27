@@ -1,5 +1,12 @@
-"""The command line: `agent-core job <instance.yaml> <sequence>`, a client of the facade (JOB-14, FAC-4). Exit 0: the
-sequence ended `done` or `stopped`; 1: it ended `failed` or the run raised; 2: the run could not start (JOB-17)."""
+"""The command line, a client of the facade (FAC-4).
+
+`agent-core job <instance.yaml> <sequence>` (JOB-14). Exit 0: the sequence ended `done` or `stopped`; 1: it ended
+`failed` or the run raised; 2: the run could not start (JOB-17).
+
+`agent-core run <instance.yaml> [NAME]` opens a session at the terminal, and `--resume SESSION_ID` carries one on
+(RUN-1). Exit 0: the session ended, or is saved and waits; 1: it raised, or its record cannot be written; 2: it could not
+start.
+"""
 
 import argparse
 import asyncio
@@ -39,6 +46,13 @@ def _parser() -> argparse.ArgumentParser:
     again = job.add_mutually_exclusive_group()
     again.add_argument("--resume", metavar="RUN_ID", help="continue the sequence run RUN_ID from the steps that finished")
     again.add_argument("--rerun-from", type=_rerun_from, metavar="RUN_ID:STEP", help="a new run: RUN_ID's steps before STEP are replayed, the rest run")
+    run = commands.add_parser("run", help="open a session with the person at the terminal")
+    run.add_argument("instance", type=Path, help="the instance.yaml")
+    run.add_argument("name", nargs="?", help="a node or a sequence to start in; default: the greeting and the menu")
+    run.add_argument("--settings", action="append", default=[], type=Path, metavar="FILE", help="a settings file; repeatable")
+    run.add_argument("--param", action="append", default=[], type=_param, metavar="KEY=VALUE", help="a setting; repeatable")
+    run.add_argument("--backend", help="the backend, instead of the instance's")
+    run.add_argument("--resume", metavar="SESSION_ID", help="carry on the session SESSION_ID where it stopped")
     return parser
 
 
@@ -76,8 +90,33 @@ async def _job(args: argparse.Namespace) -> int:
     return 1 if result.end == "failed" else 0
 
 
+async def _run(args: argparse.Namespace) -> int:
+    session_id = args.resume or agent_core.new_run_id("session")
+    try:
+        async with agent_core.open(
+            args.instance, backend=args.backend, settings=args.settings, params=dict(args.param), person="terminal",
+        ) as harness:
+            print(f"session {session_id}", flush=True)
+            if args.resume:
+                result = await harness.sessions.resume(session_id)
+            else:
+                result = await harness.sessions.start(args.name, session_id=session_id)
+    except agent_core.RunCannotStart as e:
+        print(f"error: {e}", flush=True)
+        return 2
+    if result.state == "waiting":
+        print(f"session {session_id} saved; resume with: agent-core run {args.instance} --resume {session_id}", flush=True)
+    try:  # as a job's record is written (RP-6, Q7)
+        (result.session_dir / "record.json").write_text(result.record.to_json())
+    except (TypeError, OSError) as e:
+        print(f"error: the record of session `{session_id}` cannot be written: {e}", flush=True)
+        return 1
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
-    return asyncio.run(_job(_parser().parse_args(argv)))
+    args = _parser().parse_args(argv)
+    return asyncio.run(_run(args) if args.command == "run" else _job(args))
 
 
 if __name__ == "__main__":

@@ -5,6 +5,8 @@ outputs are the declared ones, a fan-out's results come back in item order with 
 ends it.
 """
 
+import asyncio
+
 import pytest
 
 from agent_core.contracts.events import ModelRequested, NodeEnded, NodeStarted, ToolReturned
@@ -189,3 +191,67 @@ async def test_an_item_the_provider_refused_is_run_once_more_from_a_fresh_contex
     sent = [e for e in h.events.record() if isinstance(e, ModelRequested)]
     lengths = [len(next(p for p in e.parts if p.kind == "conversation").messages) for e in sent[:4]]
     assert lengths == [1, 2, 1, 2]   # the second run starts again from the opening, and does not carry the first run's call
+
+
+@pytest.mark.feature("F16")
+async def test_each_run_of_a_fan_out_starts_with_a_thread_of_its_own(harness, monkeypatch):   # SS-14, design §3.2
+    from agent_core.core.facade import _Run
+
+    started, real = [], _Run.start
+
+    async def start(self, node, inputs, thread):
+        started.append((node, thread))
+        return await real(self, node, inputs, thread)
+
+    monkeypatch.setattr(_Run, "start", start)
+    await harness(SCRIPTS).sequences.run("pairs", {"names": ["alpha", "beta"]})
+    threads = [thread for node, thread in started if node == "lookup"]
+    assert len(threads) == 2 and len(set(threads)) == 2 and all(threads)
+
+
+@pytest.mark.feature("F16")
+async def test_a_run_that_raises_keeps_the_outputs_its_finished_steps_returned(harness):   # SS-10, plan review A5
+    result = await harness({"lookup": LOOKUP}).sequences.run("lookup_then_count", {"name": "alpha"})   # `count` has no script: it raises
+    assert result.end == "failed"
+    assert result.outputs == {"revision": "r1"}
+
+
+class _GoneAtFirst:
+    """A person who has gone at the first question (after the other item is waiting for its turn), and holds a second
+    open: it is never answered, and it notes whether it was cancelled."""
+
+    def __init__(self):
+        self.asked, self.cancelled = 0, False
+
+    async def tell(self, text):
+        pass
+
+    async def hear(self):
+        return None
+
+    async def ask(self, question):
+        from agent_core.contracts.errors import SessionWaits
+
+        self.asked += 1
+        if self.asked == 1:
+            await asyncio.sleep(0.3)   # the other item reaches its own question meanwhile, and waits its turn
+            raise SessionWaits()
+        try:
+            await asyncio.Event().wait()
+        except asyncio.CancelledError:
+            self.cancelled = True
+            raise
+
+
+@pytest.mark.feature("F16")
+async def test_a_base_exception_in_one_fan_out_item_stops_the_others_and_is_raised_as_it_was(harness):   # SS-6, SS-15
+    from agent_core.contracts.errors import SessionWaits
+
+    person = _GoneAtFirst()
+    h = harness({"lookup": [[["ask", {"question": "Which?"}]], LOOKUP[1]], "count": COUNT}, person=person)
+    with pytest.raises(SessionWaits):
+        await h.sequences.run("pairs", {"names": ["alpha", "beta"]})
+    seen = len(h.events.record())
+    await asyncio.sleep(0.3)
+    assert len(h.events.record()) == seen
+    assert person.asked == 1 or person.cancelled   # the other item was stopped before it was asked, or while it was

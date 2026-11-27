@@ -143,6 +143,12 @@ async def test_a_server_the_client_registers_is_reached_even_after_a_run(toy, op
     assert "echo later" in (tmp_path / "runs" / "tool_calls.jsonl").read_text()
 
 
+async def test_a_job_runs_on_a_topology_a_session_refuses(toy, open_harness, copy):   # SS-12: improvisation is on here
+    toy(PLAIN)
+    outcome = await open_harness(copy.root, **spike()).nodes.run("plain", {})
+    assert outcome.exit == "done"
+
+
 async def test_a_node_run_carries_on_after_a_cut_shell_output_and_the_result_says_how_much(toy, open_harness, tmp_path):   # R10
     root = tmp_path / "loud-instance"
     (root / "nodes").mkdir(parents=True)
@@ -468,15 +474,15 @@ async def test_a_person_a_client_registers_under_a_known_name_is_the_one_the_nex
 async def test_an_extension_of_an_unknown_kind_is_refused(toy, open_harness):
     toy()
     harness = open_harness(FIXTURE, **spike())
-    with pytest.raises(ValueError, match="no extension kind `tool_source`; the kinds are: backend, context, person, resources, journal"):
+    with pytest.raises(ValueError, match="no extension kind `tool_source`; the kinds are: backend, context, person, resources, journal, store"):
         harness.extensions.register("tool_source", "x", object)
 
 
 # --- features a backend does not carry out -----------------------------------------------------------------------------
 
 
-async def test_sessions_are_not_built(toy, open_harness):                                  # FAC-5, example 6
-    toy()
+async def test_sessions_refuse_a_backend_that_does_not_build_them(toy, open_harness):        # FAC-5, example 6
+    toy()   # the toy's F6 is `not built`
     harness = open_harness(FIXTURE, **spike())
     with pytest.raises(FeatureNotSupported) as e:
         harness.sessions
@@ -484,11 +490,17 @@ async def test_sessions_are_not_built(toy, open_harness):                       
     assert (e.value.feature, e.value.backend, e.value.entry) == (Feature.F6, "toy", Entry("not built", "sessions, step 7"))
 
 
-async def test_sessions_raise_whatever_the_backend_says_of_them_for_none_is_built_in_this_delivery(toy, open_harness):
-    toy(entries={Feature.F6: Entry("native", "the SDK's checkpointer")})
-    harness = open_harness(FIXTURE, **spike())
-    with pytest.raises(FeatureNotSupported, match="sessions, step 7"):
-        harness.sessions
+@pytest.mark.parametrize("state", ["divergent", "not built"])
+async def test_sessions_refuse_a_backend_whose_routing_is_not_built(toy, open_harness, state):   # FAC-5
+    toy(entries={Feature.F6: Entry("helper", "toy"), Feature.F17: Entry(state, "no routing here")})
+    with pytest.raises(FeatureNotSupported) as e:
+        open_harness(FIXTURE, **spike()).sessions
+    assert (e.value.feature, e.value.entry) == (Feature.F17, Entry(state, "no routing here"))
+
+
+async def test_sessions_are_offered_where_the_backend_builds_them(toy, open_harness):          # FAC-5, SS-1
+    toy(entries={Feature.F6: Entry("native", "the SDK's checkpointer"), Feature.F17: Entry("helper", "the core's routing run")})
+    assert isinstance(open_harness(FIXTURE, **spike()).sessions, facade.Sessions)
 
 
 async def test_the_event_record_is_refused_where_tracing_is_divergent_or_not_built(toy, open_harness):   # FAC-5, example 6
@@ -548,7 +560,7 @@ async def test_a_sequence_run_gives_its_result_and_the_record_of_the_run(toy, op
     assert re.fullmatch(r"plain_run-\d{8}T\d{6}Z-[0-9a-f]{6}", result.run_id)
     assert result == facade.SequenceResult(
         "done", {"done_work": "plain-work"}, [{"step": 1, "name": "plain", "outcome": "done"}], result.run_id,
-        {"done_work": "plain-work"}, result.record, tmp_path / "runs" / result.run_id,
+        {"done_work": "plain-work"}, result.record, tmp_path / "runs" / result.run_id, {"done_work": "plain-work"},
     )
     run_dir = tmp_path / "runs" / result.run_id
     assert run_dir.is_dir() and (tmp_path / "runs" / "journal.sqlite").is_file()

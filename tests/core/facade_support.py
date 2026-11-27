@@ -60,7 +60,7 @@ class Toy:
         self.environment.append({k: v for k, v in os.environ.items() if k.startswith("AGENT_CORE_")})
         if unit.name in self.raises:
             raise self.raises[unit.name]
-        policy = await unit.start(unit.name, unit.inputs)
+        policy = await unit.start(unit.name, unit.inputs, unit.thread)
         if isinstance(policy, UnitResult):
             return policy
         self.briefs.append(policy.instructions)
@@ -89,7 +89,7 @@ class Toy:
             for update in updates:
                 if update is not None:
                     state = merge(state, update)
-        return policy.finish(state, said)
+        return await policy.finish(state, said)
 
 
 class ToyPerson:
@@ -113,4 +113,7 @@ class ToyPerson:
             return self.answer
         finally:
             self.open -= 1
+
+    async def hear(self):
+        return None
 

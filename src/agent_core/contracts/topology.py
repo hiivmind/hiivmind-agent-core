@@ -86,7 +86,16 @@ class FragmentDef:
 
 
 @dataclass(frozen=True)
+class MenuItem:
+    label: str
+    name: str   # a node or a sequence (SEQ-12)
+
+
+@dataclass(frozen=True)
 class Topology:
     nodes: Mapping[str, NodeContract]
     sequences: Mapping[str, SequenceDef]
     fragments: Mapping[str, FragmentDef]
+    exits: Mapping[str, str] = field(default_factory=dict)   # an outcome -> `route` or `end`, for a session (GW-3)
+    menu: tuple[MenuItem, ...] = ()   # shown when a session opens with nothing named (GW-8)
+    greeting: str | None = None   # told when a session opens (GW-6a)

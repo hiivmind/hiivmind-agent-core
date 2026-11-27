@@ -24,9 +24,18 @@ class Terminal:
 
     async def ask(self, question: Question) -> str | None:
         """One question at a time across the process: nodes running at once take turns while the others keep working."""
+        label = " ".join([f"{question.node}#{question.number}", *map(str, question.inputs.values())])
+        return await self._read(f"[{label}] {question.text}\n> ")
+
+    async def hear(self) -> str | None:
+        """A turn of the person's that answers no question, read under the same lock as a question."""
+        return await self._read("> ")
+
+    @staticmethod
+    async def _read(prompt: str) -> str | None:
         async with _terminal_lock():
             try:
-                label = " ".join([f"{question.node}#{question.number}", *map(str, question.inputs.values())])
-                return await asyncio.get_running_loop().run_in_executor(None, input, f"[{label}] {question.text}\n> ")
-            except EOFError:  # nothing more can be read: nobody is there
+                return await asyncio.get_running_loop().run_in_executor(None, input, prompt)
+            except EOFError:  # nothing more can be read: nobody is there; the prompt's line is ended
+                print(flush=True)
                 return None

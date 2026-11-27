@@ -10,13 +10,13 @@ name. It closes its servers when it ends, whether or not it raised. It changes n
 from __future__ import annotations
 
 import asyncio
+import copy
+import dataclasses
 import json
 import os
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -24,49 +24,43 @@ from agent_core.contracts.backend import Backend
 from agent_core.contracts.context import HandoverRequest
 from agent_core.contracts.errors import FeatureNotSupported, RunCannotStart, ToolError, ToolServerError
 from agent_core.contracts.events import Event, NodeStarted
-from agent_core.contracts.facade import Events, Extensions, Nodes, SequenceResult, Sequences, Tools
-from agent_core.contracts.matrix import Entry, Feature
+from agent_core.contracts.facade import Events, Extensions, Nodes, SequenceResult, Sequences, SessionResult, Sessions, Tools
+from agent_core.contracts.matrix import Feature
 from agent_core.contracts.person import Person, Question
 from agent_core.contracts.policy import NodeState, Policy
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.topology import Check, FragmentDef, NodeContract
 from agent_core.contracts.unit import DeclaredTools, Intent, Unit, UnitResult
-from agent_core.contracts.values import FAILED, HarnessReason, Outcome
+from agent_core.contracts.values import FAILED, HarnessReason, Message, Outcome
 from agent_core.contracts.walk import WalkResult
-from agent_core.core.brief import make_brief
+from agent_core.core.brief import make_brief, offer
 from agent_core.core.checks import unknown_inputs, unmet_check
 from agent_core.core.declared import resolve
 from agent_core.core.events import EventHub
 from agent_core.core.functions import FunctionTool, describe, import_declared
 from agent_core.core.instance import Instance, InstanceError, load_instance
 from agent_core.core.macro import Macro
-from agent_core.core.policy import NodePolicy
-from agent_core.core.record import build, failure, masked, notes
+from agent_core.core.policy import NodePolicy, QuietPolicy
+from agent_core.core.record import build, failure, masked, new_run_id, notes, now
 from agent_core.core.registry import BackendNotInstalled, UnknownBackend, UnknownProvider
 from agent_core.core.registry import backend as registered_backend
 from agent_core.core.registry import provider as registered_provider
+from agent_core.core.routing import unknown_name
+from agent_core.core.session import Session, SessionPort, WaitingServers, check_topology, new_state
 from agent_core.core.settings import SettingsError, load_settings
 from agent_core.core.templates import TemplateError, render
 
-KINDS = ("backend", "context", "person", "resources", "journal")
+KINDS = ("backend", "context", "person", "resources", "journal", "store")
 OPENING = "Run the node."
+SUMMARY = "@summary"
 RUN_ID = re.compile(r"(.+)-\d{8}T\d{6}Z-[0-9a-f]{6}")
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
-
-
-def new_run_id(sequence: str) -> str:
-    """The id of a new run of `sequence`: its name, the time it started and six random hex digits (RP-7)."""
-    return f"{sequence}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:6]}"
 
 
 _new_id = new_run_id   # `rerun`'s keyword `new_run_id` hides the function inside it
 
 
 async def _cannot_summarise(system: str, text: str) -> str:
-    raise RuntimeError("a job's node run has no summariser in this version")
+    raise RuntimeError("a job's node is handed nothing, so it has no summariser")
 
 
 class _Asking:
@@ -82,6 +76,10 @@ class _Asking:
     async def ask(self, question: Question) -> str | None:
         async with self._lock:
             return await self._person.ask(question)
+
+    async def hear(self) -> str | None:
+        async with self._lock:
+            return await self._person.hear()
 
 
 class _Recorded:
@@ -125,11 +123,15 @@ class _Run:
         resources: ResourceSource,
         person: Person,
         run_dir: Path | None,
+        backend_name: str,
+        session: SessionPort | None = None,
     ):
         self._h, self.declared, self.functions, self.settings = harness, declared, functions, settings
         self.resources, self.person, self.run_dir = resources, person, run_dir
-        self.labels: list[str] = []
-        self.failures: list[dict] = []
+        self.backend_name, self.session = backend_name, session
+        # a session's runs share its labels and failures, so that its record holds each of them (design §3.6)
+        self.labels: list[str] = session.labels if session is not None else []
+        self.failures: list[dict] = session.failures if session is not None else []
 
     async def end(self) -> None:
         """Close the run's servers."""
@@ -175,10 +177,48 @@ class _Run:
             name, inputs, intent, thread, self.start, self.declared, h.hub, h.instance.topology, self.call, fragment, self.run_dir
         )
 
-    async def start(self, node: str, inputs: Mapping) -> Policy | UnitResult:
-        """The node start (NODE-11 to NODE-13a): the declared checks, the brief and the hand-over; a `Policy`, or the result of
-        a node that does not start."""
+    async def summarise(self, system: str, text: str) -> str:
+        """What the model says to `text` under the instructions `system`, in a unit with no tools on the run's backend: a
+        run of its own, with a label and a note, and told to nobody (design §3.7, SCOPE-7)."""
         h = self._h
+        h.summaries += 1   # the harness's count: every run's events go into the one hub
+        number = h.summaries
+        label = f"{SUMMARY}#{number}"
+        self.labels.append(label)
+        policy = QuietPolicy(label=label, node=SUMMARY, instructions=system, opening=text, events=h.hub)
+        h.hub.emit(NodeStarted(label, SUMMARY, (("summary instructions", len(system)),), ()))
+
+        async def start(node: str, inputs: Mapping, thread: str) -> Policy:
+            return policy
+
+        unit = Unit(SUMMARY, {}, "start", f"{SUMMARY}/{number}", start, self.declared, h.hub, h.instance.topology, self.call)
+        result = await h.recorded(self.backend_name, self).run_node(unit)
+        return result.outputs.get("summary", "")
+
+    async def check_node(self, node: str, inputs: Mapping, facts: Mapping) -> tuple[dict | None, dict]:
+        """The node's declared checks (NODE-11 to NODE-13), against the session facts and its inputs: the unmet check (its
+        `message`, and its `outcome` if it has one) or None, and what the checks wrote. A placeholder that cannot be filled
+        is a `TemplateError`."""
+        found = self._h.instance.nodes[node]
+        inputs, facts = dict(inputs), dict(facts)
+
+        def fill(text: str) -> str:
+            return render(
+                text, file=found.file, settings=self.settings, inputs=inputs, session=facts, values={}, resources=self.resources,
+            )
+
+        return await unmet_check(
+            found.preconditions, {**facts, **inputs}, owner=node, call=self.port, functions=self.declared.functions, fill=fill,
+        )
+
+    async def start(self, node: str, inputs: Mapping, thread: str) -> Policy | UnitResult:
+        """The node start (NODE-11 to NODE-13a): the declared checks, the brief and the hand-over; a `Policy`, or the result of
+        a node that does not start. `thread` is the unit's checkpoint thread.
+
+        In a session (design §3.4) the node starts from the session facts, with its own context strategy and the session's
+        person, and its brief is made once: a unit continued on its thread is given the brief its unit entry keeps
+        (SS-14). Checks the routing run or the menu already made are not made again."""
+        h, session = self._h, self.session
         found = h.instance.nodes[node]
         contract = found.contract
         h.started += 1
@@ -188,43 +228,68 @@ class _Run:
         for tool in found.allowed_tools:  # a misdeclared node fails before any tool is called
             if tool not in self.declared.specs:
                 raise ValueError(f"`{node}` declares the tool `{tool}`, which no tool source offers")
-        state = NodeState(inputs=dict(inputs), values={}, outputs={}, session={}, rejections=0, ending=None)
-
-        def fill(text: str) -> str:
-            return render(
-                text, file=found.file, settings=self.settings, inputs=state["inputs"], session=state["session"],
-                values=state["values"], resources=self.resources,
-            )
-
+        entry = session.unit(thread) if session is not None else None
+        facts = copy.deepcopy(session.facts) if session is not None else {}
+        state = NodeState(inputs=dict(inputs), values={}, outputs={}, session=facts, rejections=0, ending=None)
         try:
-            unmet, writes = await unmet_check(
-                found.preconditions, {**state["session"], **state["inputs"]}, owner=node, call=self.port,
-                functions=self.declared.functions, fill=fill,
-            )
-            if unmet is not None and "outcome" in unmet:  # NODE-13a: the check's outcome, and no model is called
-                return UnitResult(unmet["outcome"], {}, detail={"message": unmet["message"]})
-            if unmet is not None:  # NODE-13
-                return UnitResult(FAILED, {}, reason=HarnessReason.PRECONDITION_UNMET, detail={"message": unmet["message"]})
+            if entry is not None and "checked" in entry and "instructions" not in entry:
+                writes = entry["checked"]   # the routing run or the menu made the checks (design §3.3)
+            else:
+                unmet, writes = await self.check_node(node, state["inputs"], state["session"])
+                if unmet is not None and "outcome" in unmet:  # NODE-13a: the check's outcome, and no model is called
+                    return UnitResult(unmet["outcome"], {}, detail={"message": unmet["message"]})
+                if unmet is not None:  # NODE-13
+                    return UnitResult(FAILED, {}, reason=HarnessReason.PRECONDITION_UNMET, detail={"message": unmet["message"]})
             for key, value in writes.items():  # what a met check wrote counts as recorded when the node starts (NODE-11)
                 _record(state, contract, key, value)
-            strategy = h.lookup("context", "none")()  # a job's node gets its hand-over from the first strategy
-            handover = await strategy.build(HandoverRequest(
-                transcript=(), facts=state["session"], node=node, inputs=state["inputs"], contract=contract,
-                summarise=_cannot_summarise,
-            ))
-            instructions, offered, parts = make_brief(
-                h.instance, found, inputs=state["inputs"], session=state["session"], values=state["values"],
-                settings=self.settings, resources=self.resources, tools=self.declared.specs,
-            )
+            offered = offer(found, self.declared.specs)
+            if entry is not None and "instructions" in entry:   # a continued unit keeps its first brief (SS-14)
+                instructions, parts = entry["instructions"], tuple(tuple(p) for p in entry.get("parts", ()))
+                handover = tuple(Message(**m) for m in entry["handover"])
+            else:
+                strategy = h.lookup("context", found.context if session is not None else "none")()   # a job's node gets `none`
+                handover = tuple(await strategy.build(HandoverRequest(
+                    transcript=tuple(session.transcript) if session is not None else (), facts=state["session"], node=node,
+                    inputs=state["inputs"], contract=contract,
+                    summarise=self.summarise if session is not None else _cannot_summarise,
+                )))
+                instructions, offered, parts = make_brief(
+                    h.instance, found, inputs=state["inputs"], session=state["session"], values=state["values"],
+                    settings=self.settings, resources=self.resources, tools=self.declared.specs, session_mode=session is not None,
+                )
         except TemplateError as e:  # TPL-2b, TPL-6b
             return UnitResult(FAILED, {}, reason=HarnessReason.UNKNOWN_PLACEHOLDER, detail={"detail": str(e)})
+        if session is not None:
+            session.save_unit(thread, {
+                # a unit keeps the backend that started it, whatever runs the session now (ST-4)
+                **(entry or {}), "node": node, "inputs": dict(inputs), "backend": (entry or {}).get("backend", self.backend_name),
+                "instructions": instructions, "handover": [dataclasses.asdict(m) for m in handover], "parts": [list(p) for p in parts],
+            })
         h.hub.emit(NodeStarted(label, node, parts, tuple(spec.name for spec in offered)))
         return NodePolicy(
-            found, number=number, instructions=instructions, tools=offered, handover=tuple(handover), opening=OPENING,
+            found, number=number, instructions=instructions, tools=offered, handover=handover, opening=OPENING,
             functions=self.functions, servers=self.declared.servers,
-            person=_Asking(self.person, h.person_lock), resources=self.resources, settings=self.settings,
-            events=h.hub, start=state,
+            person=_Asking(session.person if session is not None else self.person, h.person_lock), resources=self.resources,
+            settings=self.settings, events=h.hub, start=state, session=session, thread=thread,
         )
+
+
+async def _stopping(run: Awaitable[WalkResult], stopped: asyncio.Future) -> WalkResult:
+    """Await a sequence run, or what stopped its walk, whichever comes first (SS-16). A resumed walk runs in the journal's
+    task while `run` waits for its result: when the walk was stopped, the wait is cancelled and awaited, and what stopped
+    the walk is raised."""
+    task = asyncio.ensure_future(run)
+    try:
+        await asyncio.wait({task, stopped}, return_when=asyncio.FIRST_COMPLETED)
+    except BaseException:
+        task.cancel()
+        await asyncio.wait({task})
+        raise
+    if not task.done():
+        task.cancel()
+        await asyncio.wait({task})
+        raise stopped.result()
+    return task.result()
 
 
 def _record(state: NodeState, contract: NodeContract, key: str, value: object) -> None:
@@ -286,6 +351,37 @@ class _Sequences:
         match = RUN_ID.fullmatch(run_id)
         new = new_run_id or _new_id(match.group(1) if match else run_id)
         return await self._h.sequence(new, lambda macro: macro.rerun(new, run_id, from_step), run_dir)
+
+
+class _Sessions:
+    """Sessions at the terminal (SS-1): started, or resumed by their id, with the harness's person."""
+
+    def __init__(self, harness: Harness):
+        self._h = harness
+
+    def _store(self):
+        return self._h.lookup("store", "file")(self._h.runs)
+
+    async def start(self, name: str | None = None, *, session_id: str | None = None) -> SessionResult:
+        h = self._h
+        topology = h.instance.topology
+        if name is not None and name not in topology.nodes and name not in topology.sequences:
+            raise RunCannotStart(unknown_name(topology, name))   # GW-4c
+        check_topology(h.instance)   # SS-12
+        session_id, store, state = session_id or new_run_id("session"), self._store(), new_state()
+        store.save(session_id, state)
+        return await Session(h, session_id, state, store, h.person()).run(name)
+
+    async def resume(self, session_id: str) -> SessionResult:
+        h = self._h
+        check_topology(h.instance)
+        store = self._store()
+        state = store.load(session_id)
+        if state is None:
+            raise RunCannotStart(f"no session {session_id}")   # E9
+        if state["status"] == "ended":
+            raise RunCannotStart(f"session {session_id} has ended")   # E9
+        return await Session(h, session_id, state, store, h.person()).resume()
 
 
 class _Tools:
@@ -355,12 +451,14 @@ class Harness:
         self.hub = EventHub()
         self.person_lock = asyncio.Lock()
         self.started = 0
+        self.summaries = 0
         self.functions: dict[str, FunctionTool] = {}
         self.servers: dict[str, dict] = {}
         self._person = person if person is not None else "nobody"
         self._backends: dict[str, Backend] = {}
         self._closed = False
         self.nodes, self.sequences, self.tools = _Nodes(self), _Sequences(self), _Tools(self)
+        self._sessions = _Sessions(self)
         self.events, self.extensions = _Events(self), _Extensions(self)
         if isinstance(self._person, str):
             self.lookup("person", self._person)  # a name the registry does not know stops `open`
@@ -399,10 +497,11 @@ class Harness:
         if entry.state in ("divergent", "not built"):
             raise FeatureNotSupported(feature, self.backend_name, entry)
 
-    async def begin(self, run_dir: Path | None, backend: Backend | None = None) -> _Run:
+    async def begin(self, run_dir: Path | None, backend: Backend | None = None, session: SessionPort | None = None) -> _Run:
         """Start a run (`run_dir` is None outside a sequence): its settings, its servers (TOOL-15, made by `backend`, the
         default one when None, given the instance and the run directory in their environment, RP-1), and the
-        declared-tool set (TOOL-16). The caller calls `end` on the run."""
+        declared-tool set (TOOL-16). With a `session`, its node runs are session node runs (design §3.4). The caller calls
+        `end` on the run."""
         try:
             settings = load_settings(self.instance, [Path(f) for f in self.settings_files], self._params)
         except SettingsError as e:
@@ -413,36 +512,50 @@ class Harness:
         env = {**os.environ, "AGENT_CORE_INSTANCE": str(self.root), "AGENT_CORE_RUN_DIR": str(run_dir or self.runs)}
         servers = None
         try:
-            person = self._person if not isinstance(self._person, str) else self.lookup("person", self._person)()
+            person = self.person()
             resources = self.lookup("resources", "folder")(self.root)
-            servers = (backend or self.backend(None)).servers(dict(self.servers), self.root, env)
+            chosen = backend or self.backend(None)
+            servers = chosen.servers(dict(self.servers), self.root, env)
+            if session is not None:   # a server that cannot be reached waits for the person (TOOL-11f), one at a time (JOB-6)
+                servers = WaitingServers(servers, _Asking(session.person, self.person_lock))
             functions = dict(self.functions)
             declared = await resolve(functions, servers, {name: name for name in self.servers})
         except BaseException:
             if servers is not None:
                 await servers.close()
             raise
-        return _Run(self, declared, functions, settings, resources, person, run_dir)
+        name = next((n for n, made in self._backends.items() if made is chosen), self.backend_name)
+        return _Run(self, declared, functions, settings, resources, person, run_dir, name, session)
 
     async def sequence(
-        self, run_id: str, go: Callable[[Macro], Awaitable[WalkResult]], run_dir: Path | None = None
+        self,
+        run_id: str,
+        go: Callable[[Macro], Awaitable[WalkResult]],
+        run_dir: Path | None = None,
+        session: SessionPort | None = None,
+        backend: str | None = None,
     ) -> SequenceResult:
         """Run a sequence as one journalled run under `run_id`, and keep its record (§4.6, §4.7). A run that raises ends
-        `failed`: the record says why, and what the walk had reached (JOB-17, RESUME-2)."""
-        start = _now()
+        `failed`: the record says why, and what the walk had reached (JOB-17, RESUME-2).
+
+        `backend` runs every unit of the sequence instead of the default one: a sequence resumed in a session runs on the
+        backend it started with (ST-4). With a `session`, its node runs are session node runs (design §3.10), and a person
+        who has gone stops the run unrecorded: `SessionWaits` is raised once the walk has unwound, whether the walk runs in
+        this task or, resumed, in the journal's (SS-16)."""
+        start = now()
         run_dir = (run_dir or self.runs / run_id).resolve()
-        run = await self.begin(run_dir)
+        run = await self.begin(run_dir, session=session)
         try:
             journal = self.lookup("journal", "dbos")(self.runs / "journal.sqlite", self.instance.name, run_id)
             macro = Macro(
                 self.instance.topology, backends=lambda name: _Recorded(self.backend(name), run),
-                default_backend=self.backend_name, make_unit=run.unit, journal=journal, call_tool=run.call,
+                default_backend=backend or self.backend_name, make_unit=run.unit, journal=journal, call_tool=run.call,
                 check=run.check,
             )
             result = error = None
             try:   # the journal is closed whatever the run raises, cancellation and exits included
                 try:
-                    result = await go(macro)
+                    result = await (_stopping(go(macro), macro.stopped) if session is not None else go(macro))
                 except Exception as e:  # the run raised, or the journal refused it (an unknown id)
                     error = f"{type(e).__name__}: {e}"
                 try:
@@ -455,20 +568,31 @@ class Harness:
             await run.end()
         record = build(
             params=self.params, settings_files=self.settings_files, backend=self.backend_name, attended=self.attended,
-            start=start, end=_now(), failures=run.failures, events=self.hub.record(), labels=run.labels, run_id=run_id,
+            start=start, end=now(), failures=run.failures, events=self.hub.record(), labels=run.labels, run_id=run_id,
             sequence=sequence, result=result, error=error, progress=macro.progress,
         )
-        return SequenceResult(record.end_state, record.facts or {}, record.steps, run_id, record.summary, record, run_dir)
+        # a result the journal stored before outputs were kept has none
+        outputs = dict(result.get("outputs", {}) if result is not None else macro.progress.get("outputs", {}))
+        return SequenceResult(
+            record.end_state, record.facts or {}, record.steps, run_id, record.summary, record, run_dir, outputs
+        )
 
     # --- the facade -------------------------------------------------------------------------------------------
 
     @property
-    def sessions(self) -> object:
-        """Sessions are step 7: nothing of them is built (FAC-5). The backend's own entry is the reason when it says so."""
-        entry = self.backend(None).features()[Feature.F6]
-        if entry.state not in ("divergent", "not built"):
-            entry = Entry("not built", "sessions, step 7")
-        raise FeatureNotSupported(Feature.F6, self.backend_name, entry)
+    def sessions(self) -> Sessions:
+        """Refused where the default backend declares session persistence or routing `divergent` or `not built` (FAC-5)."""
+        self.require(Feature.F6)
+        self.require(Feature.F17)
+        return self._sessions
+
+    def person(self) -> Person:
+        """The person given at `open`: a `Person`, or one made from the registry by its name."""
+        return self._person if not isinstance(self._person, str) else self.lookup("person", self._person)()
+
+    def recorded(self, name: str | None, run: _Run) -> _Recorded:
+        """The backend `name` (None: the default) as `run` uses it: its failures go into the run's record."""
+        return _Recorded(self.backend(name), run)
 
     async def close(self) -> None:
         """Close the backends this harness made."""

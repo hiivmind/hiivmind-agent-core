@@ -1,6 +1,6 @@
 # agent-core
 
-A small Python harness that runs model-driven procedures, called nodes, and walks them as sequences. `agent_core.open(instance)` returns one runtime object; `agent-core job` is a client of it. The core imports no agent framework: each framework sits behind a backend, which is a provider the core is handed by name.
+A small Python harness that runs model-driven procedures, called nodes, and walks them as sequences, either as a job with nobody at the terminal or in a session with the person there. `agent_core.open(instance)` returns one runtime object; `agent-core job` and `agent-core run` are clients of it. The core imports no agent framework: each framework sits behind a backend, which is a provider the core is handed by name.
 
 The old tree (v0) is kept at the tag `v0-final`; it is not in this tree.
 
@@ -13,10 +13,10 @@ The design documents (architecture, requirements and the layered facade design, 
 | Directory | Holds | Imports |
 |---|---|---|
 | `contracts/` | the protocols and values every layer shares: `Backend`, `Policy`, the topology, the facade's protocols, the events, the matrix of features | nothing of ours, no SDK |
-| `core/` | the facade, core policy (one `NodePolicy` per node run), the macro walk's driver, the instance loader, the registry | `contracts/` |
+| `core/` | the facade, core policy (one `NodePolicy` per node run), the macro walk's driver, the session and its routing run, the instance loader, the registry | `contracts/` |
 | `helpers/` | the walk (a sequence or a fragment, fan-out), the MCP client | `contracts/` |
-| `backends/`, `journals/`, `person/`, `resources/`, `context/` | providers: the scripted backend, the DBOS journal, the terminal and nobody, the folder, the none strategy | `contracts/`, `helpers/` |
-| `cli.py` | `agent-core job` | `agent_core` (its public `open`) only |
+| `backends/`, `journals/`, `person/`, `resources/`, `context/`, `stores/` | providers: the scripted backend, the DBOS journal, the terminal and nobody, the folder, the `none`, `all` and `summary` strategies, the file store | `contracts/`, `helpers/` |
+| `cli.py` | `agent-core job` and `agent-core run` | `agent_core` (its public `open`) only |
 
 The core reaches helpers and providers by name through the registry (`core/registry.py` holds module names as strings), so the walk is written once and serves both the macro level (driven by the core, journalled by DBOS) and a fragment (driven by a backend without a graph). `packages/agent-tools/` is a second distribution with the shell server (`shell__run`); the core ships no tools.
 
@@ -33,6 +33,8 @@ async with agent_core.open("instance.yaml", backend=None, settings=(), params=No
     result = await harness.sequences.resume(result.run_id)
     result = await harness.sequences.rerun(result.run_id, 2)
     record = result.record                      # a RunRecord
+    session = await harness.sessions.start()    # a SessionResult: `ended`, or `waiting` for a person who has gone
+    session = await harness.sessions.resume(session.session_id)
 ```
 
 `open` is synchronous and loads the instance, its settings and its default backend; every start-up failure, an unknown person name included, raises `RunCannotStart`. The harness is an async context manager. Its namespaces:
@@ -43,8 +45,8 @@ async with agent_core.open("instance.yaml", backend=None, settings=(), params=No
 | `harness.sequences.run / resume / rerun` | a sequence as one journalled run: each step is recorded by DBOS, the run record is returned; a run that raised ends `failed` and its record keeps its partial steps and facts |
 | `harness.tools.register / register_server` | function tools and MCP servers of the client's own |
 | `harness.events.record()` | the neutral events of the runs so far |
-| `harness.extensions.register(kind, name, provider)` | a backend, context, person, resources or journal of the client's own |
-| `harness.sessions` | raises `FeatureNotSupported`: sessions are step 7 |
+| `harness.extensions.register(kind, name, provider)` | a backend, context, person, resources, journal or store of the client's own |
+| `harness.sessions.start(name=None) / resume(session_id)` | a session with the harness's person: entered at a node or a sequence, or opened with the topology's greeting and menu; it ends on an outcome whose exit handling is `end`, or returns `waiting` when the person has gone, saved to be resumed; raises `FeatureNotSupported` where the default backend builds no sessions (F6, F17) |
 
 `person` is a `Person` or the name of a registered one (`"terminal"`, `"nobody"`); its `ask` takes a `Question` (the text, the node, its run number and its inputs). `runs` is the directory of the run directories and the journal (default `<instance directory>/runs/`).
 
@@ -136,6 +138,28 @@ agent-core job instance.yaml lookup_then_count --input name=alpha
 The command opens the harness with the terminal as the person when standard input is a terminal and `--no-ask` is not given, and with nobody otherwise. It prints `run <id>` first, runs the sequence, and writes `record.json` in the run directory: the run id, its end state (`done`, `stopped` or `failed`), its steps in order, its final facts, the summary, the failures and a note for each node run of this process. The exit code is `0` when the sequence ended `done` or `stopped`, `1` when it ended `failed` or the run raised, and `2` when the run could not start (one line, `error: ...`, is printed). A job is started by whatever the host provides (cron, a systemd timer, CI); the core has no scheduler.
 
 Each step is recorded by DBOS in `journal.sqlite` beside the run directories. A run is resumed only when `--resume` names it. Resuming a run that finished returns its result; resuming a run that raised raises its error again, and `--rerun-from` that step is the way on.
+
+## `agent-core run`
+
+`agent-core run <instance.yaml> [NAME]` opens a session at the terminal. With `NAME`, a node or a sequence, the session starts there; a name that is both is the sequence, and a name that is neither exits 2, listing both. With none, it tells the topology's `greeting` and shows its `menu`, where they exist, and hears the person.
+
+```bash
+agent-core run instance.yaml update-sources
+agent-core run instance.yaml --resume session-20261125T102000Z-d4e5f6
+```
+
+| Option | Meaning |
+|---|---|
+| `--settings FILE`, `--param KEY=VALUE`, `--backend NAME` | as for `agent-core job` |
+| `--resume SESSION_ID` | carry the session on where it stopped |
+
+- **The loop.** A reply that is a menu item, by its number or its label in any case, enters that item by code. Any other reply goes to the routing run: a model run whose one tool is `enter`, handed the conversation so far, with the nodes (and their inputs) and the sequences listed, and the instance's `GATEWAY.md` where there is one. When what it started ends, the topology's `exits` say whether the session goes back to the person (`route`, and any outcome with no row) or ends (`end`).
+- **In a node.** What the model says is shown as it says it, and when it stops without a call the person's reply goes back to it. A node is not offered `enter`: a request outside it is declined, and its question asked again. Its `context` line (`none`, `all` or `summary`) says what it is handed of the conversation so far.
+- **Leaving and resuming.** End of input (Ctrl-D) at any prompt saves the session and prints how to resume it. A stopped process (Ctrl-C, a kill) loses nothing either, since each change is saved as it is made. A session is kept in `<runs>/<session id>/`: `session.json`, the node runs' checkpoints, and `record.json`, the record of the last process's part. On resume a question that was waiting is asked again; on LangGraph the node carries on from its checkpoint, on the scripted backend it runs again from its start. A session that ended is not resumed.
+- **A tool server that cannot be reached** is told to the person, and their reply makes the call again.
+- **Improvisation** (diversions to a temporary node) is not built yet: a topology that turns it on is refused when a session starts.
+
+The exit code is `0` when the session ended or is saved and waiting, `1` when it raised or its record could not be written, and `2` when it could not start.
 
 ## Tests
 

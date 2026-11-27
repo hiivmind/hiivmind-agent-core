@@ -6,7 +6,7 @@ returns what changed as a `StateUpdate`.
 
 import copy
 import json
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -26,6 +26,7 @@ from agent_core.core.instance import NodeDef
 
 if TYPE_CHECKING:
     from agent_core.core.functions import FunctionTool
+    from agent_core.core.session import SessionPort
 
 CORRECTIONS = 1  # JOB-7b: outputs that fail the schema are returned once for correction
 
@@ -56,6 +57,24 @@ def together(names: Iterable[str]) -> str:
     )
 
 
+def review_calls(calls: Sequence[ToolCall], offered: frozenset[str], ended: bool) -> Review:
+    """The response rules, written once for a node run and the routing run (P22): after the run has ended nothing runs
+    (CTL-7); an alone verb beside another call refuses them all (VERB-6a, VERB-6b); a call not offered is refused
+    (NODE-6b)."""
+    if ended:
+        return Review({c.id: "not run: the node run has ended" for c in calls})
+    if len(calls) > 1 and any(c.name in _BY_NAME and _BY_NAME[c.name].alone for c in calls):
+        refusal = together(v.name for v in VERBS if v.alone and v.name in offered)
+        return Review({c.id: refusal for c in calls})
+    return Review({c.id: f"refused: `{c.name}` is not declared by the node that is running" for c in calls if c.name not in offered})
+
+
+def argument_errors(name: str, error: ValidationError) -> str:
+    """A verb's arguments that do not validate, as the call's result: the model's to correct (Q3)."""
+    why = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'arguments'}: {err['msg']}" for err in error.errors())
+    return f"error: `{name}`: {why}"
+
+
 class NodePolicy:
     def __init__(
         self,
@@ -73,6 +92,8 @@ class NodePolicy:
         settings: object | None,
         events: EventSink,
         start: NodeState,
+        session: "SessionPort | None" = None,
+        thread: str = "",
     ):
         self.definition = definition
         self.node = definition.contract.name
@@ -90,6 +111,7 @@ class NodePolicy:
         self._settings = settings
         self._events = events
         self._start = start
+        self._session, self._thread = session, thread
 
     def initial(self) -> NodeState:
         return copy.deepcopy(self._start)
@@ -98,23 +120,19 @@ class NodePolicy:
 
     def review(self, response: ModelResponse, state: NodeState) -> Review:
         """Refuse before any call of the response runs (VERB-6a, VERB-6b, NODE-6b, CTL-7)."""
-        calls = response.calls
-        if state["ending"] is not None:
-            return Review({c.id: "not run: the node run has ended" for c in calls})
-        if len(calls) > 1 and any(c.name in _BY_NAME and _BY_NAME[c.name].alone for c in calls):
-            refusal = together(v.name for v in VERBS if v.alone and v.name in self._offered)
-            return Review({c.id: refusal for c in calls})
-        return Review(
-            {
-                c.id: f"refused: `{c.name}` is not declared by the node that is running"
-                for c in calls
-                if c.name not in self._offered
-            }
-        )
+        return review_calls(response.calls, self._offered, state["ending"] is not None)
 
-    def stopped(self, said: str, state: NodeState) -> str | None:
-        """The model stopped without a call. Nobody is there to reply in a job: the run ends (JOB-12)."""
-        return None
+    async def responded(self, response: ModelResponse, state: NodeState) -> str | None:
+        """A response arrived. Nobody is there to reply in a job: a stop without a call ends the run (JOB-12). In a session
+        its text is told to the person as it arrives (SS-8), and a stop without a call is answered by the person's reply
+        (KIT-10)."""
+        if self._session is None:
+            return None
+        if response.text:
+            await self._person.tell(response.text)
+        if response.calls:
+            return None
+        return await self._person.hear()
 
     # --- a call ----------------------------------------------------------------------------------------------
 
@@ -126,8 +144,7 @@ class NodePolicy:
                 try:
                     args = verb.args.model_validate(args).model_dump()
                 except ValidationError as e:  # the model's to correct, as a wrong outcome is (Q3)
-                    why = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'arguments'}: {err['msg']}" for err in e.errors())
-                    return CallResult(f"error: `{name}`: {why}", error=True)
+                    return CallResult(argument_errors(name, e), error=True)
             return await verb.body(self, args, state)
         if name in self._functions:
             return self._function(self._functions[name], args, state)
@@ -171,7 +188,7 @@ class NodePolicy:
 
     # --- the end of the run ----------------------------------------------------------------------------------
 
-    def finish(self, state: NodeState, said: str) -> UnitResult:
+    async def finish(self, state: NodeState, said: str) -> UnitResult:
         ending = state["ending"]
         if ending is None:  # the model stopped without an exit (JOB-12)
             result = UnitResult(FAILED, {}, reason=HarnessReason.NO_EXIT, detail={"said": said})
@@ -180,7 +197,38 @@ class NodePolicy:
                 ending["outcome"], ending["outputs"], reason=ending.get("reason"), detail=ending.get("detail") or {}
             )
         self._events.emit(NodeEnded(self.label, self.node, result.exit, result.reason))
+        if self._session is not None:   # what it recorded while it ran, never an output its exit was refused (NODE-9)
+            contract = self.definition.contract
+            await self._session.node_ended(
+                self._thread, self.node, dict(self._start["inputs"]), result, dict(state["outputs"]), contract.outputs,
+            )
         return result
+
+
+class QuietPolicy:
+    """A run with no tools whose result is what the model said, told to nobody: a summary (design §3.7)."""
+
+    tools: tuple[ToolSpec, ...] = ()
+    handover: tuple[Message, ...] = ()
+
+    def __init__(self, *, label: str, node: str, instructions: str, opening: str, events: EventSink):
+        self.label, self.node, self.instructions, self.opening, self._events = label, node, instructions, opening, events
+
+    def initial(self) -> NodeState:
+        return NodeState(inputs={}, values={}, outputs={}, session={}, rejections=0, ending=None)
+
+    def review(self, response: ModelResponse, state: NodeState) -> Review:
+        return review_calls(response.calls, frozenset(), state["ending"] is not None)
+
+    async def call(self, call: ToolCall, state: NodeState) -> CallResult:
+        return CallResult("not run: this run has no tools", error=True)
+
+    async def responded(self, response: ModelResponse, state: NodeState) -> str | None:
+        return None
+
+    async def finish(self, state: NodeState, said: str) -> UnitResult:
+        self._events.emit(NodeEnded(self.label, self.node, DONE, None))
+        return UnitResult(DONE, {"summary": said})
 
 
 # --- the verbs ------------------------------------------------------------------------------------------------
@@ -188,7 +236,11 @@ class NodePolicy:
 
 async def _ask(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
     question = args["question"]
+    if policy._session is not None:   # saved before it is put, so that a restart asks it again (ST-1)
+        policy._session.pending(policy._thread, question)
     answer = await policy._person.ask(Question(question, policy.node, policy.number, dict(policy._start["inputs"])))
+    if policy._session is not None:
+        policy._session.pending(policy._thread, None)
     if answer is None:  # nobody is there: the job ends and says what it needed (JOB-6)
         ending = Ending(FAILED, {}, reason=HarnessReason.NEEDS_INPUT, detail={"question": question})
         return CallResult("not answered: nobody is there", error=True, update=StateUpdate(ending=ending))
@@ -278,12 +330,12 @@ class Verb:
     alone: bool  # must be the only call in a response (VERB-6)
     in_job: bool  # offered to a job's node
     checked: bool  # its arguments are validated before the body runs; `exit` checks its own (CD-7)
-    body: Callable[[NodePolicy, dict, NodeState], Awaitable[CallResult]] | None  # None: comes with sessions
+    body: Callable[[NodePolicy, dict, NodeState], Awaitable[CallResult]] | None  # None: the routing run's (core/routing.py)
 
 
 VERBS: tuple[Verb, ...] = (
-    Verb("enter", EnterArgs, "Enter another node of this instance, with the inputs it declares.",
-         "enter another node of this instance, with the inputs it declares.",
+    Verb("enter", EnterArgs, "Start a node or a sequence of this instance, with the inputs it declares.",
+         "start a node or a sequence of this instance, with the inputs it declares.",
          alone=True, in_job=False, checked=True, body=None),
     Verb("exit", ExitArgs, "End the node that is running with one of its outcomes and the outputs it declares.",
          "finish the node that is running, with one of its outcomes and the outputs it declares.",

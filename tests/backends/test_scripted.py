@@ -19,7 +19,7 @@ class Replying:
     label, node, instructions, tools, handover, opening = "n#1", "n", "instructions", (), (), "go"
 
     def __init__(self, reply=None):
-        self.reply, self.stops, self.calls = reply, [], []
+        self.reply, self.stops, self.calls, self.seen = reply, [], [], []
 
     def initial(self):
         return {"inputs": {}, "values": {}, "outputs": {}, "session": {}, "rejections": 0, "ending": None}
@@ -29,13 +29,17 @@ class Replying:
 
     async def call(self, call, state):
         self.calls.append(call.name)
+        self.seen.append(("call", call.name))
         return CallResult("ok")
 
-    def stopped(self, said, state):
-        self.stops.append(said)
+    async def responded(self, response, state):
+        self.seen.append(("responded", len(response.calls)))
+        if response.calls:
+            return None
+        self.stops.append(response.text)
         return self.reply
 
-    def finish(self, state, said):
+    async def finish(self, state, said):
         return UnitResult("done", {"said": said})
 
 
@@ -45,7 +49,7 @@ class Sink:
 
 
 def unit_of(policy, node="n"):
-    async def start(name, inputs):
+    async def start(name, inputs, thread):
         return policy
 
     return Unit(node, {}, "start", "", start, None, Sink(), None, None)
@@ -76,15 +80,14 @@ def test_the_matrix_holds_an_entry_for_every_feature_and_builds_what_it_declares
     matrix = ScriptedBackend(ScriptedSettings()).features()
     assert set(matrix) == set(Feature)
     helpers = {f.id for f, e in matrix.items() if e.state == "helper"}
-    assert helpers == {"F1", "F2", "F3", "F4", "F5", "F7", "F8", "F9", "F11", "F15", "F16", "F18", "F21"}
+    assert helpers == {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F11", "F15", "F16", "F17", "F18", "F21"}
     assert matrix[Feature.F7] == Entry(
         "helper", "macro resume by the core's journal; a unit in flight runs again from its start"
     )
+    assert matrix[Feature.F6] == Entry("helper", "the core's session store; a unit in flight runs again from its start")
     assert {f.id: e for f, e in matrix.items() if e.state == "not built"} == {
         **{f: Entry("not built", "no model") for f in ("F10", "F12", "F13", "F14", "F20", "F24")},
         "F19": Entry("not built", "deferred: no consumer in this delivery"),
-        "F6": Entry("not built", "sessions, step 7"),
-        "F17": Entry("not built", "sessions, step 7"),
         "F22": Entry("not built", "reserved"),
         "F23": Entry("not built", "deferred"),
     }
@@ -110,7 +113,7 @@ async def test_a_string_step_the_policy_does_not_answer_ends_the_run(tmp_path):
 
 
 async def test_a_node_that_does_not_start_is_not_played(tmp_path):
-    async def start(name, inputs):
+    async def start(name, inputs, thread):
         return UnitResult("skipped", {})
 
     result = await ScriptedBackend(ScriptedSettings()).run_node(Unit("n", {}, "start", "", start, None, None, None, None))
@@ -132,3 +135,9 @@ async def test_a_missing_script_file_names_the_file(tmp_path):
 async def test_without_the_setting_the_backend_says_so():
     with pytest.raises(ValueError, match="SCRIPTS"):
         await ScriptedBackend(ScriptedSettings()).run_node(unit_of(Replying()))
+
+
+async def test_each_response_is_given_to_the_policy_once_before_its_calls_run(tmp_path):   # SS-7
+    policy = Replying(None)
+    await with_scripts(tmp_path, n=[[["a", {}], ["b", {}]], "done"]).run_node(unit_of(policy))
+    assert policy.seen == [("responded", 2), ("call", "a"), ("call", "b"), ("responded", 0)]

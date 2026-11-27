@@ -43,7 +43,7 @@ class FakePolicy:
     tools = (ToolSpec("work", "does work", SCHEMA), ToolSpec("exit", "ends", SCHEMA))
 
     def __init__(self):
-        self.ran = []
+        self.ran, self.seen = [], []
 
     def initial(self):
         return {"inputs": {}, "values": {}, "outputs": {}, "session": {}, "rejections": 0, "ending": None}
@@ -55,14 +55,16 @@ class FakePolicy:
 
     async def call(self, call, state):
         self.ran.append(call.name)
+        self.seen.append(("call", call.name))
         if call.name == "exit":
             return CallResult("exited", update=StateUpdate(ending=Ending("done", {})))
         return CallResult("worked")
 
-    def stopped(self, said, state):
+    async def responded(self, response, state):
+        self.seen.append(("responded", len(response.calls)))
         return None
 
-    def finish(self, state, said):
+    async def finish(self, state, said):
         raise NotImplementedError
 
 
@@ -111,3 +113,8 @@ async def test_the_text_of_a_response_with_calls_is_in_the_next_request_once(tmp
     conversation = next(p for p in requests[1].parts if p.kind == "conversation").messages
     assert [(m.kind, m.text) for m in conversation if m.kind == "agent"] == [("agent", "thinking aloud")]
     assert [m.kind for m in conversation] == ["user", "agent", "call"]
+
+
+async def test_each_response_is_given_to_the_policy_once_before_its_calls_run(tmp_path):   # SS-7
+    policy, events, state = await play(tmp_path, [[["work", {}], ["work", {"x": 1}]], "done"])
+    assert policy.seen == [("responded", 2), ("call", "work"), ("call", "work"), ("responded", 0)]

@@ -15,7 +15,7 @@ BACKENDS: dict[str, tuple[str, str]] = {   # name -> (module, the package a miss
 }
 PROVIDERS: dict[str, dict[str, str]] = {
     "walk": {"topology": "agent_core.helpers.walk"},
-    "context": {"none": "agent_core.context.none"},
+    "context": {"none": "agent_core.context.none", "all": "agent_core.context.all", "summary": "agent_core.context.summary"},
     "resources": {"folder": "agent_core.resources.folder"},
     "person": {
         "terminal": "agent_core.person.terminal",
@@ -25,6 +25,7 @@ PROVIDERS: dict[str, dict[str, str]] = {
         "none": "agent_core.journals.none",
         "dbos": "agent_core.journals.dbos",
     },
+    "store": {"file": "agent_core.stores.file"},
 }
 
 

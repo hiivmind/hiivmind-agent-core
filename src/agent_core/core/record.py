@@ -2,6 +2,8 @@
 
 import json
 from collections.abc import Collection, Iterable, Mapping
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from pydantic import SecretBytes, SecretStr
 
@@ -10,6 +12,17 @@ from agent_core.contracts.facade import RunRecord
 from agent_core.contracts.unit import UnitResult
 from agent_core.contracts.values import NodeNote, Usage
 from agent_core.contracts.walk import WalkResult
+
+
+def now() -> str:
+    """The time, as a record writes it."""
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def new_run_id(name: str) -> str:
+    """The id of a new run of `name` (a sequence, or `session`): its name, the time it started and six random hex digits
+    (RP-7)."""
+    return f"{name}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:6]}"
 
 
 def _total(counts: list[int | None]) -> int | None:
@@ -115,4 +128,40 @@ def build(
         end_state=end_state,
         steps=steps,
         facts=facts,
+    )
+
+
+def session_record(
+    *,
+    params: dict,
+    settings_files: list[str],
+    backend: str,
+    attended: bool,
+    start: str,
+    end: str,
+    failures: list[dict],
+    events: Iterable[Event],
+    labels: Collection[str],
+    session_id: str,
+    end_state: str,
+    facts: dict,
+) -> RunRecord:
+    """The record of this process's part of a session (design §3.6): the notes of its node runs, routing and summary runs
+    included (SCOPE-7), its failures, and the session facts. `end_state` is `ended` or `waiting`; `sequence` is None."""
+    return RunRecord(
+        params=params,
+        settings_files=settings_files,
+        backend=backend,
+        attended=attended,
+        start=start,
+        end=end,
+        status="ok",
+        summary=None,
+        failures=failures,
+        notes=list(notes(events, labels)),
+        run_id=session_id,
+        sequence=None,
+        end_state=end_state,
+        steps=None,
+        facts=dict(facts),
     )

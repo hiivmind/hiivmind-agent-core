@@ -39,3 +39,4 @@ class WalkResult(TypedDict):   # a TypedDict, so DBOS records it as the dict it 
     facts: dict
     summary: object
     sequence: str   # the sequence walked, kept with the result, so that a journal that hands a finished run's result back names it
+    outputs: dict   # the declared outputs the steps returned, in the order they ended, apart from the other facts (SS-10)

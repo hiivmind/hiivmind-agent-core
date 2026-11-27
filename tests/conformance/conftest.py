@@ -9,6 +9,7 @@ backend is told. A test carries `@pytest.mark.feature("F<n>")`; for a backend wh
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -71,20 +72,28 @@ def delivered(backend_name, tmp_path, monkeypatch):
 
 @pytest.fixture
 async def harness(backend_name, delivered, tmp_path):
-    """`harness(scripts, delivery=None, **options)`: a harness on the conformance instance. `options` are those of
-    `agent_core.open`; `runs` defaults to a directory of the test's own. `delivery` holds the backend's own delivery
-    options, as `delivered` takes them."""
+    """`harness(scripts, delivery=None, instance=None, **options)`: a harness on the conformance instance, or on the
+    instance directory `instance` (a copy the test changed). `options` are those of `agent_core.open`; `runs` defaults to
+    a directory of the test's own. `delivery` holds the backend's own delivery options, as `delivered` takes them."""
     opened = []
 
-    def make(scripts: dict[str, list], delivery: dict | None = None, **options):
+    def make(scripts: dict[str, list], delivery: dict | None = None, instance: Path | None = None, **options):
         delivered(scripts, **(delivery or {}))
         options = {"backend": backend_name, "runs": tmp_path / "runs", **options}
-        opened.append(agent_core.open(INSTANCE / "instance.yaml", **options))
+        opened.append(agent_core.open((instance or INSTANCE) / "instance.yaml", **options))
         return opened[-1]
 
     yield make
     for each in opened:
         await each.close()
+
+
+@pytest.fixture
+def copied(tmp_path):
+    """A copy of the conformance instance in `tmp_path / "instance"`, for a test that changes one of its files."""
+    root = tmp_path / "instance"
+    shutil.copytree(INSTANCE, root, ignore=shutil.ignore_patterns("__pycache__"))
+    return root
 
 
 @pytest.fixture

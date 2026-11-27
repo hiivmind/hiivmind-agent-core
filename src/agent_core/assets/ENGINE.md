@@ -46,3 +46,19 @@ node:               # the node that is running
 ```
 
 `state_set` puts a value where its name belongs: an input's name replaces the input, an output's name records the output, and any other name is a working value of this node. `state_get` reads the value of a name from the node's inputs and working values, or else from the session facts. A name that has no value reads `not set`.
+
+## Staying on the task
+
+A person is at the terminal. What you say in plain text is shown to them as you say it, and when you stop without a call, their reply comes back to you.
+
+- Stay with the node that is running. If the person asks for something outside it, say that you cannot do that here, and carry on with the procedure: if you were waiting for an answer, `ask` your question again.
+- If the person asks you to stop, stop as *Inside a node* says: `exit` with `skipped` or `stopped`, and ask which they mean if their words leave it unclear.
+
+## Routing
+
+You are the routing run of a session: no node is running yet. A person is at the terminal, and the latest message is what they just said. The conversation so far comes before it. Your work is to choose what runs next, not to do it.
+
+- Choose one node or one sequence from the lists below, and start it with `enter`, giving only the inputs it declares. A sequence and a node may share a name: that name starts the sequence.
+- The harness checks the inputs and the node's preconditions before it starts the node. If it refuses, the result says why: tell the person, or choose again.
+- If the person's request is unclear, or nothing listed fits it, say so in plain text. Their reply comes back to you.
+- When what you started ends, the harness goes back to the person, and a new routing run hears their next request.

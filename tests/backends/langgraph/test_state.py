@@ -63,10 +63,10 @@ class StatePolicy:
             return CallResult("error: boom", error=True)   # a failed call carries no update
         return CallResult("exited", update=StateUpdate(ending=Ending("done", {"who": state["values"]["who"]})))
 
-    def stopped(self, said, state):
+    async def responded(self, response, state):
         return None
 
-    def finish(self, state, said):
+    async def finish(self, state, said):
         return UnitResult(state["ending"]["outcome"], {**state["values"], **state["ending"]["outputs"]})
 
 
@@ -158,7 +158,7 @@ async def test_settings_and_state_never_reach_the_model(tmp_path):   # TOOL-12
 
 
 def _unit(policy, thread):
-    async def start(node, inputs):
+    async def start(node, inputs, thread):
         return policy
 
     async def call_tool(name, args):

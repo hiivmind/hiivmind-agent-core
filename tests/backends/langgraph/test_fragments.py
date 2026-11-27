@@ -25,7 +25,7 @@ STEPS = [[["set", {"key": "mine", "value": "m"}]], [["exit", {}]]]
 
 
 def unit_of(policy, *, intent, thread="t", run_dir=None):
-    async def start(node, inputs):
+    async def start(node, inputs, thread):
         return policy
 
     async def call_tool(name, args):

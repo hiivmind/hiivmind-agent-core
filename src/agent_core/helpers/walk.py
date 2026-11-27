@@ -43,6 +43,7 @@ class _Walk:
         self.taken = 0                      # step numbers taken so far; DBOS numbers its steps the same way
         self.trail: list[dict] = []
         self.results: dict[int, UnitResult] = {}   # each step's result by step number, for a fragment's inner trail
+        self.produced: dict = {}   # the declared outputs the steps returned, in the order they ended (SS-10)
 
     def _number(self, count: int = 1) -> int:
         first = self.taken + 1
@@ -118,6 +119,7 @@ class _Walk:
                     entry["steps"] = list(result.steps)
                 outputs = self._declared(node, result.outputs)
             facts.update(outputs)
+            self.produced.update(outputs)
             if outcome == "stopped":  # SEQ-7
                 return "stopped", outcome, summary, False
             target = rows.get(node, {}).get(outcome)
@@ -150,7 +152,7 @@ class _Walk:
                 stop = stop or result.exit == "stopped"
                 return result
 
-        results = await asyncio.gather(*(one(n, slot, item) for n, (slot, item) in enumerate(zip(reserved, items), 1)))
+        results = await _all_or_none([one(n, slot, item) for n, (slot, item) in enumerate(zip(reserved, items), 1)])
         done, failures = [], []
         for n, (item, result) in enumerate(zip(items, results), 1):
             if result is None:
@@ -192,13 +194,27 @@ class _Walk:
 async def walk_sequence(port: WalkPort, name: str, facts: dict, progress: dict | None = None) -> WalkResult:
     """Walk the sequence `name` from `facts`. Returns its end state, the steps it took, the facts and the summary.
 
-    `progress`, when given, is filled with the live `trail` and `facts`, so that a caller whose walk raised can still
-    say which steps it took and what it had found (RESUME-2)."""
+    `progress`, when given, is filled with the live `trail`, `facts` and `outputs`, so that a caller whose walk raised can
+    still say which steps it took, what it had found and what its finished steps returned (RESUME-2, SS-10)."""
     walk, facts = _Walk(port), dict(facts)
     if progress is not None:
-        progress["trail"], progress["facts"] = walk.trail, facts
+        progress["trail"], progress["facts"], progress["outputs"] = walk.trail, facts, walk.produced
     end, _, summary, _ = await walk.sequence(name, facts)
-    return {"end": end, "trail": walk.trail, "facts": facts, "summary": summary, "sequence": name}
+    return {"end": end, "trail": walk.trail, "facts": facts, "summary": summary, "sequence": name, "outputs": walk.produced}
+
+
+async def _all_or_none(runs: list) -> list:
+    """Await the runs at once, the results in their order. When one raises, whatever it raises, the others are cancelled
+    and awaited before it is raised as it was, so that nothing of the fan-out runs on after it (SS-15). Not a
+    `TaskGroup`: it would wrap a `BaseException` that is not `SystemExit` or `KeyboardInterrupt` in a group (SS-6)."""
+    tasks = [asyncio.ensure_future(run) for run in runs]
+    try:
+        return list(await asyncio.gather(*tasks))
+    except BaseException:
+        for task in tasks:
+            task.cancel()
+        await asyncio.wait(tasks)
+        raise
 
 
 def _inner(entry: dict, result: UnitResult | None) -> dict:

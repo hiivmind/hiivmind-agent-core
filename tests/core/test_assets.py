@@ -13,10 +13,17 @@ def test_engine_document_is_self_contained_and_has_its_sections():              
     assert "session:" in text and "node:" in text             # the state shape, in YAML (ENG-2)
 
 
-def test_engine_document_offers_a_job_its_five_verbs_and_no_routing():                      # NODE-6a
-    text = _doc("ENGINE.md")
-    assert "## Routing" not in text and "## Diversions" not in text and "enter" not in text
-    assert text.index("# Engine rules") < text.index("## Inside a node")
+def test_a_jobs_brief_offers_its_five_verbs_and_no_session_section(instance):                # NODE-6a
+    from support import FolderSource
+
+    from agent_core.core.brief import make_brief
+
+    text, _, parts = make_brief(
+        instance, instance.nodes["plain"], inputs={}, session={}, values={}, settings=None,
+        resources=FolderSource(instance.root), tools={},
+    )
+    assert "## Staying on the task" not in text and "## Routing" not in text and "## Diversions" not in text
+    assert "`enter(" not in text and [source for source, _ in parts][:2] == ["engine: rules", "engine: inside a node"]
 
 
 def test_engine_document_lists_each_instance_slot_and_what_an_absent_one_means():           # ENG-8

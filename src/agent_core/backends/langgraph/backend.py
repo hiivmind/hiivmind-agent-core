@@ -73,7 +73,7 @@ class LangGraphBackend:
     async def _run_node(self, unit: Unit, checkpointer: AsyncSqliteSaver | bool | None, configurable: dict) -> UnitResult:
         """One node run. `checkpointer` is the run directory's, for a unit of its own; `None`, to checkpoint under the
         graph this call runs inside, as a node of a fragment does; `False`, for no checkpoint at all."""
-        policy = await unit.start(unit.name, unit.inputs)
+        policy = await unit.start(unit.name, unit.inputs, unit.thread)
         if isinstance(policy, UnitResult):   # the node did not start
             return policy
         module, name = self._provider, self._model
@@ -104,7 +104,8 @@ class LangGraphBackend:
             raise mapped from e
         last = state["messages"][-1]
         said = text_of(last) if isinstance(last, AIMessage) and not last.tool_calls else ""
-        return policy.finish(state["node"], said)
+        return await policy.finish(state["node"], said)
+
     def _retries(self) -> ModelRetryMiddleware:
         """The one retry owner (MOD-6): the client's own retries are off. What it gives up on is raised as it was."""
         module, settings = self._provider, self._settings

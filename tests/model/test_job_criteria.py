@@ -23,6 +23,9 @@ class Person:
         self.asked.append((f"{question.node}#{question.number}", question.text))
         return self.answer
 
+    async def hear(self):
+        return None
+
 
 def returned(h) -> list[tuple[str, str, bool]]:
     return [(e.call.name, e.text, e.error) for e in h.events.record() if isinstance(e, ToolReturned)]

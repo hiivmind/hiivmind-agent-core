@@ -11,3 +11,6 @@ class Nobody:
 
     async def ask(self, question: Question) -> str | None:
         return None
+
+    async def hear(self) -> str | None:
+        return None

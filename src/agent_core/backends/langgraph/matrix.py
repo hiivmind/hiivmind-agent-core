@@ -1,14 +1,12 @@
 """The wiring matrix of the LangGraph backend: one entry per feature, each naming its means.
 
-Each entry is `native` or `helper`, naming its means. F6, F17, F22 and F23 stand at the values they have for every
-backend; F10, F14 and F19 are deferred.
+Each entry is `native` or `helper`, naming its means. F22 and F23 stand at the values they have for every backend; F10,
+F14 and F19 are deferred.
 """
 
 from agent_core.contracts.matrix import Entry, Feature, Matrix
 
 _FIXED = {
-    Feature.F6: "sessions, step 7",
-    Feature.F17: "sessions, step 7",
     Feature.F22: "reserved",
     Feature.F23: "deferred",
     Feature.F10: "deferred: no setting turns it on yet; the SDK summarizer's own retries would be a second retry owner (MOD-6)",
@@ -17,11 +15,13 @@ _FIXED = {
 }
 
 _HELPER = {
+    Feature.F17: "the core's routing run (ORC-7)",
     Feature.F8: "a synchronous person inside the call; `interrupt` is not used in a job",
     Feature.F9: "the `none` strategy; calls handed over as calls (`_render`)",
     Feature.F11: "the `exit` tool, core policy: LangChain's structured output has the wrong shape for a union of exits, retries without a budget and validates before recorded outputs merge (architecture §4.4)",
 }
 _NATIVE = {
+    Feature.F6: "the checkpointer inside a unit; the core's session store between units",
     Feature.F1: "`create_agent`",
     Feature.F2: "`ToolNode` runs the tools after `after_model` reviews the response",
     Feature.F18: "the offered tools; `after_model` and `wrap_tool_call`",
