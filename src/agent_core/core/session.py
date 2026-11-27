@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from agent_core.contracts.context import transcript_handover
 from agent_core.contracts.errors import RunCannotStart, SessionWaits, ToolServerError
 from agent_core.contracts.events import NodeStarted
-from agent_core.contracts.facade import SessionResult
+from agent_core.contracts.facade import SequenceResult, SessionResult
 from agent_core.contracts.person import Person, Question
 from agent_core.contracts.store import SessionStore
 from agent_core.contracts.tools import ToolSource
@@ -22,7 +22,7 @@ from agent_core.contracts.unit import Unit, UnitResult
 from agent_core.contracts.values import FAILED, HarnessReason, ToolSpec
 from agent_core.core.brief import make_routing_brief
 from agent_core.core.instance import Instance
-from agent_core.core.record import now, session_record
+from agent_core.core.record import new_run_id, now, session_record
 from agent_core.core.routing import ENTERED, ROUTING, RoutingPolicy
 
 if TYPE_CHECKING:
@@ -274,9 +274,32 @@ class Session:
             await self._enter(run, entered["name"], entered["inputs"], entered["checked"])
 
     async def _enter(self, run: _Run, name: str, inputs: dict, checked: dict | None) -> None:
-        """Start what a menu item, the command line or the routing run named. `checked` holds what the routing run's checks
-        wrote; None, when the checks are still to be made, when the node starts."""
-        await self._node(run, name, inputs, checked)
+        """Start what a menu item, the command line or the routing run named: a name that is both is the sequence
+        (SEQ-12). `checked` holds what the routing run's checks wrote; None, when the checks are still to be made, when
+        the node starts."""
+        if name in self._h.instance.topology.sequences:
+            await self._sequence(name, inputs)
+        else:
+            await self._node(run, name, inputs, checked)
+
+    async def _sequence(self, name: str, inputs: dict) -> None:
+        """A sequence of the session: a run of its own, journalled, which starts from the inputs it was entered with and
+        not from the session facts (SS-9). Its node runs are session node runs (design §3.10)."""
+        self.state["menu_waiting"] = False
+        run_id = new_run_id(name)
+        self.state["sequence"] = {"run_id": run_id, "backend": self._h.backend_name, "name": name, "inputs": dict(inputs)}
+        self.port.save()
+        result = await self._h.sequence(run_id, lambda m: m.start(run_id, name, dict(inputs)), session=self.port)
+        await self._sequence_ended(result)
+
+    async def _sequence_ended(self, result: SequenceResult) -> None:
+        """The declared outputs its steps returned are merged, in the order they ended (SS-10), and the session returns to
+        routing (GW-3, amended 2026-11-16)."""
+        entered = self.state["sequence"]
+        self.state["facts"].update(result.outputs)
+        self.state["sequence"] = None
+        self.port.add({"sequence": entered["name"], "inputs": entered["inputs"], "end": result.end})
+        await self._menu()
 
     async def _node(self, run: _Run, name: str, inputs: dict, checked: dict | None) -> None:
         waited = self.state["menu_waiting"]
@@ -323,7 +346,15 @@ class Session:
         """Carry on from where the session stopped (design §3.5)."""
         state, port = self.state, self.port
         transcript = port.transcript
-        if state["node"] is not None:   # a unit in flight: continued on its thread, on the backend that started it (SS-11)
+        if state["sequence"] is not None:   # resumed by its journal, every unit on the backend it started with (ST-4)
+            sequence = state["sequence"]
+            run_id = sequence["run_id"]
+            port.replaying = True
+            result = await self._h.sequence(
+                run_id, lambda m: m.resume(run_id), session=port, backend=sequence["backend"],
+            )
+            await self._sequence_ended(result)
+        elif state["node"] is not None:   # a unit in flight: continued on its thread, on the backend that started it (SS-11)
             thread = state["node"]
             entry = state["units"][thread]
             port.replaying = True

@@ -63,3 +63,19 @@ async def test_the_unit_in_flight_resumes_on_the_backend_that_started_it(opened)
     left = await opened({"ask": ASK}, ScriptedPerson([])).sessions.start("ask")
     resumed = await opened({"ask": ASK}, ScriptedPerson(["red", None]), backend="scripted").sessions.resume(left.session_id)
     assert resumed.facts == {"colour": "red"}   # the scripted backend has no script for `ask`: it ran on LangGraph
+
+
+ASKING = [[["ask", {"question": "Which?"}]], [["lookup_revision", {}]], [["exit", {"outcome": "done", "outputs": {}}]]]
+COUNT = [[["exit", {"outcome": "done", "outputs": {"total": 7}}]]]
+
+
+@pytest.mark.parametrize("sequence,inputs", [
+    ("lookup_then_count", {"name": "alpha"}),   # a node step in flight
+    ("singles", {"name": "alpha"}),             # a fragment step in flight
+])
+async def test_a_sequence_in_flight_resumes_on_the_backend_it_started_with(opened, sequence, inputs):   # ST-4, plan review A3
+    scripts = {"@routing": [[["enter", {"node": sequence, "inputs": inputs}]]], "lookup": ASKING, "count": COUNT}
+    left = await opened(scripts, ScriptedPerson(["go"])).sessions.start()
+    assert left.state == "waiting"
+    resumed = await opened(scripts, ScriptedPerson(["this", None]), backend="scripted").sessions.resume(left.session_id)
+    assert resumed.facts["total"] == 7   # the scripted backend has no scripts: every unit of the sequence ran on LangGraph

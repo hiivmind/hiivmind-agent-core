@@ -4,6 +4,7 @@ The core reaches the walk by name through the registry. The journal records each
 can be resumed by its id (RESUME-1 to RESUME-5); nothing resumes unless `resume` is called (RESUME-4).
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable, Mapping, Sequence
 
 from agent_core.contracts.backend import Backend
@@ -33,6 +34,16 @@ class Macro:
         self._make_unit, self._journal, self._call_tool, self._check = make_unit, journal, call_tool, check
         self.sequence: str | None = None   # the sequence this run walks: its stored name on a resume or a rerun
         self.progress: dict = {}   # the live `trail` and `facts` of the walk in this process, whether or not it ends
+        self._stopped: asyncio.Future | None = None
+
+    @property
+    def stopped(self) -> asyncio.Future:
+        """Done, holding what stopped the walk, once a `BaseException` that is not an `Exception` or a cancellation has
+        left the walk and the walk has unwound: a person who has gone, in a session (SS-16). A journal records no such
+        end, and on a resume the walk runs in the journal's own task, so the caller watches this beside the journal."""
+        if self._stopped is None:
+            self._stopped = asyncio.get_running_loop().create_future()
+        return self._stopped
 
     def _walk(self, run_id: str, resuming: bool):
         """The walk the journal runs. On a resume every step runs with intent `continue` unless the walk says `fresh`: a
@@ -50,7 +61,14 @@ class Macro:
         async def walk(steps: Steps, name: str, facts: dict) -> WalkResult:
             self.sequence = name   # a resumed or re-run workflow is given the name its journal stored
             port = WalkPort(self._topology, run_step, self._call_tool, self._check, steps)
-            return await walker.walk_sequence(port, name, facts, self.progress)
+            try:
+                return await walker.walk_sequence(port, name, facts, self.progress)
+            except (Exception, asyncio.CancelledError):
+                raise
+            except BaseException as e:
+                if not self.stopped.done():
+                    self.stopped.set_result(e)
+                raise
 
         return walk
 

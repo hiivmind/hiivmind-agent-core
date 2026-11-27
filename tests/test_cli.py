@@ -58,10 +58,10 @@ def test_a_name_that_is_not_a_sequence_exits_2_listing_the_sequences(job):      
     one_line(ran, "error: no sequence `no_such_sequence`; the sequences are: ask_one, plain_run")
 
 
-FROZEN = (   # the run id is the facade's (RP-7): its clock is the one frozen
-    "import sys; from datetime import datetime, timezone; import agent_core.core.facade as facade; import agent_core.cli as cli\n"
+FROZEN = (   # the run id is made in core/record.py (RP-7): its clock is the one frozen
+    "import sys; from datetime import datetime, timezone; import agent_core.core.record as record; import agent_core.cli as cli\n"
     "class Frozen:\n    @staticmethod\n    def now(tz=None):\n        return datetime(2026, 11, 14, 1, 2, 3, tzinfo=timezone.utc)\n"
-    "facade.datetime = Frozen\nsys.exit(cli.main(sys.argv[1:]))\n"
+    "record.datetime = Frozen\nsys.exit(cli.main(sys.argv[1:]))\n"
 )
 
 

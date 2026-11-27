@@ -3,6 +3,7 @@
 import json
 from collections.abc import Collection, Iterable, Mapping
 from datetime import datetime, timezone
+from uuid import uuid4
 
 from pydantic import SecretBytes, SecretStr
 
@@ -16,6 +17,12 @@ from agent_core.contracts.walk import WalkResult
 def now() -> str:
     """The time, as a record writes it."""
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def new_run_id(name: str) -> str:
+    """The id of a new run of `name` (a sequence, or `session`): its name, the time it started and six random hex digits
+    (RP-7)."""
+    return f"{name}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:6]}"
 
 
 def _total(counts: list[int | None]) -> int | None:

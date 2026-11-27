@@ -16,9 +16,7 @@ import json
 import os
 import re
 from collections.abc import Awaitable, Callable, Mapping, Sequence
-from datetime import datetime, timezone
 from pathlib import Path
-from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -43,7 +41,7 @@ from agent_core.core.functions import FunctionTool, describe, import_declared
 from agent_core.core.instance import Instance, InstanceError, load_instance
 from agent_core.core.macro import Macro
 from agent_core.core.policy import NodePolicy, QuietPolicy
-from agent_core.core.record import build, failure, masked, notes, now
+from agent_core.core.record import build, failure, masked, new_run_id, notes, now
 from agent_core.core.registry import BackendNotInstalled, UnknownBackend, UnknownProvider
 from agent_core.core.registry import backend as registered_backend
 from agent_core.core.registry import provider as registered_provider
@@ -56,11 +54,6 @@ KINDS = ("backend", "context", "person", "resources", "journal", "store")
 OPENING = "Run the node."
 SUMMARY = "@summary"
 RUN_ID = re.compile(r"(.+)-\d{8}T\d{6}Z-[0-9a-f]{6}")
-
-
-def new_run_id(sequence: str) -> str:
-    """The id of a new run of `sequence`: its name, the time it started and six random hex digits (RP-7)."""
-    return f"{sequence}-{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-{uuid4().hex[:6]}"
 
 
 _new_id = new_run_id   # `rerun`'s keyword `new_run_id` hides the function inside it
@@ -277,6 +270,24 @@ class _Run:
             person=_Asking(session.person if session is not None else self.person, h.person_lock), resources=self.resources,
             settings=self.settings, events=h.hub, start=state, session=session, thread=thread,
         )
+
+
+async def _stopping(run: Awaitable[WalkResult], stopped: asyncio.Future) -> WalkResult:
+    """Await a sequence run, or what stopped its walk, whichever comes first (SS-16). A resumed walk runs in the journal's
+    task while `run` waits for its result: when the walk was stopped, the wait is cancelled and awaited, and what stopped
+    the walk is raised."""
+    task = asyncio.ensure_future(run)
+    try:
+        await asyncio.wait({task, stopped}, return_when=asyncio.FIRST_COMPLETED)
+    except BaseException:
+        task.cancel()
+        await asyncio.wait({task})
+        raise
+    if not task.done():
+        task.cancel()
+        await asyncio.wait({task})
+        raise stopped.result()
+    return task.result()
 
 
 def _record(state: NodeState, contract: NodeContract, key: str, value: object) -> None:
@@ -514,24 +525,34 @@ class Harness:
         return _Run(self, declared, functions, settings, resources, person, run_dir, name, session)
 
     async def sequence(
-        self, run_id: str, go: Callable[[Macro], Awaitable[WalkResult]], run_dir: Path | None = None
+        self,
+        run_id: str,
+        go: Callable[[Macro], Awaitable[WalkResult]],
+        run_dir: Path | None = None,
+        session: SessionPort | None = None,
+        backend: str | None = None,
     ) -> SequenceResult:
         """Run a sequence as one journalled run under `run_id`, and keep its record (§4.6, §4.7). A run that raises ends
-        `failed`: the record says why, and what the walk had reached (JOB-17, RESUME-2)."""
+        `failed`: the record says why, and what the walk had reached (JOB-17, RESUME-2).
+
+        `backend` runs every unit of the sequence instead of the default one: a sequence resumed in a session runs on the
+        backend it started with (ST-4). With a `session`, its node runs are session node runs (design §3.10), and a person
+        who has gone stops the run unrecorded: `SessionWaits` is raised once the walk has unwound, whether the walk runs in
+        this task or, resumed, in the journal's (SS-16)."""
         start = now()
         run_dir = (run_dir or self.runs / run_id).resolve()
-        run = await self.begin(run_dir)
+        run = await self.begin(run_dir, session=session)
         try:
             journal = self.lookup("journal", "dbos")(self.runs / "journal.sqlite", self.instance.name, run_id)
             macro = Macro(
                 self.instance.topology, backends=lambda name: _Recorded(self.backend(name), run),
-                default_backend=self.backend_name, make_unit=run.unit, journal=journal, call_tool=run.call,
+                default_backend=backend or self.backend_name, make_unit=run.unit, journal=journal, call_tool=run.call,
                 check=run.check,
             )
             result = error = None
             try:   # the journal is closed whatever the run raises, cancellation and exits included
                 try:
-                    result = await go(macro)
+                    result = await (_stopping(go(macro), macro.stopped) if session is not None else go(macro))
                 except Exception as e:  # the run raised, or the journal refused it (an unknown id)
                     error = f"{type(e).__name__}: {e}"
                 try:

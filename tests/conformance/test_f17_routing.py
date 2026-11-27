@@ -125,3 +125,26 @@ async def test_an_end_row_ends_the_session(harness, copied, tmp_path):   # GW-3
     from agent_core.stores.file import FileStore
 
     assert FileStore(tmp_path / "runs").load(result.session_id)["status"] == "ended"
+
+
+SHARED = """sequences:
+  lookup:
+    description: Look up alpha.
+    inputs: {name: alpha}
+    start: lookup
+    transitions:
+      lookup: {done: end, failed: end}
+"""
+
+
+@pytest.mark.feature("F17")
+async def test_a_command_line_name_shared_with_a_node_starts_the_sequence(harness, copied, tmp_path):   # SEQ-12, E2
+    from agent_core.stores.file import FileStore
+
+    topology = copied / "topology.yaml"
+    topology.write_text(topology.read_text().replace("sequences:\n", SHARED, 1))
+    result = await harness({"lookup": LOOKUP}, instance=copied, person=ScriptedPerson([None])).sessions.start("lookup")
+    entries = FileStore(tmp_path / "runs").load(result.session_id)["transcript"]
+    assert {"node": "lookup", "inputs": {"name": "alpha"}, "outcome": "done"} in entries
+    assert {"sequence": "lookup", "inputs": {}, "end": "done"} in entries
+    assert result.facts == {"revision": "r1"}

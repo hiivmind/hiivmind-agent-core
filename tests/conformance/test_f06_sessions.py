@@ -91,3 +91,88 @@ async def test_a_session_saved_between_units_resumes_on_the_other_backend(harnes
     resumed = await h.sessions.resume(left.session_id)
     assert [e.label for e in h.events.record() if isinstance(e, ModelRequested)] == ["@routing#1"]
     assert resumed.facts == {"note": "n"}
+
+
+# --- sequences in a session (SS-9, SS-10, SS-16) -----------------------------------------------------------------------
+
+COUNT = [[["exit", {"outcome": "done", "outputs": {"total": 7}}]]]
+SESSION = "session-20261128T000000Z-5e5510"
+
+
+def saved(tmp_path, facts, said):
+    """A session saved with `facts`, at a turn of the person's (`said`) that was never routed: resuming routes it."""
+    from agent_core.core.session import new_state
+    from agent_core.stores.file import FileStore
+
+    state = new_state()
+    state["facts"], state["transcript"] = dict(facts), [{"user": said}]
+    FileStore(tmp_path / "runs").save(SESSION, state)
+    return SESSION
+
+
+def routed_to(name, inputs):
+    return {"@routing": [[["enter", {"node": name, "inputs": inputs}]]]}
+
+
+def transcript(tmp_path):
+    from agent_core.stores.file import FileStore
+
+    return FileStore(tmp_path / "runs").load(SESSION)["transcript"]
+
+
+@pytest.mark.feature("F6")
+async def test_a_sequence_starts_from_its_inputs_not_the_session_facts(harness, tmp_path):   # E11, SS-9
+    saved(tmp_path, {"name": "beta"}, "look up alpha and count")
+    scripts = {**routed_to("lookup_then_count", {"name": "alpha"}), "lookup": LOOKUP, "count": COUNT}
+    resumed = await harness(scripts, person=ScriptedPerson([None])).sessions.resume(SESSION)
+    assert resumed.facts["revision"] == "r1"   # alpha's, not beta's
+
+
+@pytest.mark.feature("F6")
+async def test_a_sequence_entered_without_its_input_does_not_take_it_from_the_facts(harness, tmp_path):   # E11, plan review A8
+    saved(tmp_path, {"name": "beta"}, "look something up")
+    scripts = {**routed_to("lookup_then_count", {}), "lookup": LOOKUP, "count": COUNT}
+    resumed = await harness(scripts, person=ScriptedPerson([None])).sessions.resume(SESSION)
+    assert "revision" not in resumed.facts
+    assert {"sequence": "lookup_then_count", "inputs": {}, "end": "failed"} in transcript(tmp_path)
+
+
+@pytest.mark.feature("F6")
+async def test_only_the_outputs_the_steps_returned_are_merged(harness, tmp_path):   # E11, SS-10
+    saved(tmp_path, {"name": "beta"}, "look up alpha and count")
+    scripts = {**routed_to("lookup_then_count", {"name": "alpha"}), "lookup": LOOKUP, "count": COUNT}
+    resumed = await harness(scripts, person=ScriptedPerson([None])).sessions.resume(SESSION)
+    assert resumed.facts == {"name": "beta", "revision": "r1", "total": 7}   # the sequence's input `alpha` is not merged
+    assert {"sequence": "lookup_then_count", "inputs": {"name": "alpha"}, "end": "done"} in transcript(tmp_path)
+
+
+@pytest.mark.feature("F6")
+async def test_a_failed_node_inside_a_sequence_is_told_and_is_in_the_transcript(harness, tmp_path):   # CTL-8, plan review A4
+    saved(tmp_path, {}, "look up alpha")
+    failed = [[["exit", {"outcome": "failed", "outputs": {"reason": "the register is closed"}}]]]
+    person = ScriptedPerson([None])
+    scripts = {**routed_to("lookup_then_count", {"name": "alpha"}), "lookup": failed, "count": COUNT}
+    await harness(scripts, person=person).sessions.resume(SESSION)
+    assert any("the register is closed" in text for text in person.told)
+    entry = {"node": "lookup", "inputs": {"name": "alpha"}, "outcome": "failed", "reason": "the register is closed"}
+    assert entry in transcript(tmp_path)
+
+
+@pytest.mark.feature("F6")
+async def test_a_resumed_sequence_that_waits_again_returns_waiting(harness, tmp_path):   # SS-16, SS-15, D1, plan review A2
+    import asyncio
+
+    asking = [[["ask", {"question": "Which?"}]], LOOKUP[0], LOOKUP[1]]
+    scripts = {**routed_to("pairs", {"names": ["alpha", "beta"]}), "lookup": asking, "count": COUNT}
+    left = await harness(scripts, person=ScriptedPerson(["pair them", None])).sessions.start(session_id=SESSION)
+    assert left.state == "waiting"
+    again = ScriptedPerson([])
+    h = harness(scripts, person=again)
+    waiting = await h.sessions.resume(SESSION)   # resumed by the journal, and the person has gone again
+    assert waiting.state == "waiting" and [q.text for q in again.asked][:1] == ["Which?"]
+    seen = len(h.events.record())
+    await asyncio.sleep(0.3)
+    assert len(h.events.record()) == seen   # nothing of the fan-out runs on after the session returned
+    answered = await harness(scripts, person=ScriptedPerson(["x", "y", None])).sessions.resume(SESSION)
+    assert answered.state == "waiting" and answered.facts["total"] == 7
+    assert {"sequence": "pairs", "inputs": {"names": ["alpha", "beta"]}, "end": "done"} in transcript(tmp_path)
