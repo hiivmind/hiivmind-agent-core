@@ -4,14 +4,30 @@ The session's state is the core's own (P25): its facts, the node runs in flight,
 It is saved through a `store` provider after each change a restart must not lose (SS-3).
 """
 
-import asyncio
+from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING
+
+from agent_core.contracts.context import transcript_handover
 from agent_core.contracts.errors import RunCannotStart, SessionWaits
+from agent_core.contracts.events import NodeStarted
+from agent_core.contracts.facade import SessionResult
 from agent_core.contracts.person import Person, Question
 from agent_core.contracts.store import SessionStore
-from agent_core.contracts.unit import UnitResult
+from agent_core.contracts.topology import MenuItem
+from agent_core.contracts.unit import Unit, UnitResult
 from agent_core.contracts.values import FAILED, HarnessReason
+from agent_core.core.brief import make_routing_brief
 from agent_core.core.instance import Instance
+from agent_core.core.record import now, session_record
+from agent_core.core.routing import ENTERED, ROUTING, RoutingPolicy
+
+if TYPE_CHECKING:
+    from agent_core.core.facade import Harness, _Run
+
+MENU = "What would you like to do?"
 
 EXIT_HANDLING = ("route", "end")
 
@@ -130,3 +146,171 @@ class RecordingPerson:
             raise SessionWaits()
         self._port.add({"user": reply})
         return reply
+
+
+class Session:
+    """One session of the person's (design §3.3): its loop over their turns, run in one `_Run` of the harness for its
+    length (TOOL-15), with its state saved through `store` as it changes."""
+
+    def __init__(self, harness: Harness, session_id: str, state: dict, store: SessionStore, person: Person):
+        self._h, self.id, self.state = harness, session_id, state
+        self.port = SessionPort(state, store, session_id, person)
+        self.dir = harness.runs / session_id
+        self._routed = 0
+
+    async def run(self, name: str | None) -> SessionResult:
+        """A new session: entered at `name` by code (GW-4a), or opened with the greeting and the menu (GW-6a, GW-8)."""
+        return await self._session(lambda run: self._open(run, name))
+
+    async def resume(self) -> SessionResult:
+        return await self._session(self._resume)
+
+    async def _session(self, first: Callable[[_Run], Awaitable[None]]) -> SessionResult:
+        h, start = self._h, now()
+        run = await h.begin(self.dir, session=self.port)
+        try:
+            try:
+                await first(run)
+                await self._loop(run)
+            except SessionWaits:   # the person has gone: the session is saved and waits for them (SS-5)
+                pass
+        finally:
+            self.port.save()
+            await run.end()
+        state = "ended" if self.state["status"] == "ended" else "waiting"
+        record = session_record(
+            params=h.params, settings_files=h.settings_files, backend=h.backend_name, attended=h.attended, start=start,
+            end=now(), failures=run.failures, events=h.hub.record(), labels=run.labels, session_id=self.id, end_state=state,
+            facts=self.state["facts"],
+        )
+        return SessionResult(self.id, state, dict(self.state["facts"]), record, self.dir)
+
+    # --- the loop ------------------------------------------------------------------------------------------------------
+
+    async def _open(self, run: _Run, name: str | None) -> None:
+        if name is not None:
+            await self._enter(run, name, {}, None)
+            return
+        if self._h.instance.topology.greeting:
+            await self.port.person.tell(self._h.instance.topology.greeting)
+        await self._menu()
+
+    async def _loop(self, run: _Run) -> None:
+        """Each turn of the person's: a menu item entered by code, or anything else routed (design §3.3)."""
+        while self.state["status"] != "ended":
+            reply = await self.port.person.hear()
+            if self.state["menu_waiting"]:
+                item = self._chosen(reply)
+                if item is not None:
+                    await self._enter(run, item.name, {}, None)
+                    continue
+                self.state["menu_waiting"] = False
+                self.port.save()
+            await self._route(run)
+
+    async def _menu(self) -> None:
+        menu = self._h.instance.topology.menu
+        if not menu:
+            return
+        self.state["menu_waiting"] = True
+        await self.port.person.tell("\n".join([MENU, *(f"{n}. {item.label}" for n, item in enumerate(menu, 1))]))
+
+    def _chosen(self, reply: str) -> MenuItem | None:
+        """The menu item a reply names: its number, or its label compared without case (GW-8)."""
+        said = reply.strip().casefold()
+        for n, item in enumerate(self._h.instance.topology.menu, 1):
+            if said in (str(n), item.label.casefold()):
+                return item
+        return None
+
+    async def _route(self, run: _Run) -> None:
+        """The routing run (SCOPE-6): handed the transcript before the person's last turn, and opened with that turn."""
+        h = self._h
+        self._routed += 1
+        label = f"{ROUTING}#{self._routed}"
+        run.labels.append(label)
+        transcript = self.port.transcript
+        resources = run.resources
+        guide = resources.read("GATEWAY.md") if resources.exists("GATEWAY.md") else None
+        instructions, tools, parts = make_routing_brief(h.instance, guide)
+        policy = RoutingPolicy(
+            label=label, topology=h.instance.topology, instructions=instructions, tools=tools,
+            handover=transcript_handover(transcript[:-1]), opening=transcript[-1]["user"], facts=self.state["facts"],
+            check=run.check_node, person=self.port.person, events=h.hub,
+        )
+        h.hub.emit(NodeStarted(label, ROUTING, parts, tuple(spec.name for spec in tools)))
+
+        async def start(node, inputs, thread):
+            return policy
+
+        unit = Unit(ROUTING, {}, "start", f"{self.id}/r{self._routed}", start, run.declared, h.hub, h.instance.topology, run.call)
+        result = await h.recorded(None, run).run_node(unit)
+        if result.exit == ENTERED:
+            entered = result.outputs
+            await self._enter(run, entered["name"], entered["inputs"], entered["checked"])
+
+    async def _enter(self, run: _Run, name: str, inputs: dict, checked: dict | None) -> None:
+        """Start what a menu item, the command line or the routing run named. `checked` holds what the routing run's checks
+        wrote; None, when the checks are still to be made, when the node starts."""
+        await self._node(run, name, inputs, checked)
+
+    async def _node(self, run: _Run, name: str, inputs: dict, checked: dict | None) -> None:
+        waited = self.state["menu_waiting"]
+        self.state["menu_waiting"] = False
+        self.state["started"] += 1
+        thread = f"{self.id}/{self.state['started']}"
+        entry = {"node": name, "inputs": dict(inputs), "backend": run.backend_name}
+        if checked is not None:
+            entry["checked"] = dict(checked)
+        self.state["units"][thread], self.state["node"] = entry, thread
+        self.port.save()
+        result = await self._h.recorded(run.backend_name, run).run_node(run.unit(name, inputs, "start", thread))
+        await self._ended(thread, name, result, waited)
+
+    async def _ended(self, thread: str, name: str, result: UnitResult, waited: bool = False) -> None:
+        """After a top-level node run: its facts merged (ST-2, NODE-9), then its exit handling (GW-3, Q1). A node whose
+        checks refused it did not run: the person is told why, and the menu waits as it did (GW-4b)."""
+        port, state = self.port, self.state
+        state["node"] = None
+        if thread in state["units"]:   # it did not start: `node_ended` was not reached
+            entry = state["units"].pop(thread)
+            message = result.detail.get("message") or result.detail.get("detail")
+            if message:
+                await port.person.tell(message)
+            if result.reason == HarnessReason.PRECONDITION_UNMET:
+                state["menu_waiting"] = waited
+                port.save()
+                return
+            port.add({"node": name, "inputs": entry["inputs"], "outcome": result.exit,
+                      **({"reason": str(result.reason)} if result.exit == FAILED and result.reason else {})})
+        declared = self._h.instance.nodes[name].contract.outputs
+        state["facts"].update(port.recorded.pop(thread, {}))
+        state["facts"].update({k: v for k, v in result.outputs.items() if k in declared})
+        if self._h.instance.topology.exits.get(result.exit, "route") == "end":
+            state["status"] = "ended"
+            port.save()
+            return
+        port.save()
+        await self._menu()
+
+    # --- resuming ------------------------------------------------------------------------------------------------------
+
+    async def _resume(self, run: _Run) -> None:
+        """Carry on from where the session stopped (design §3.5)."""
+        state, port = self.state, self.port
+        transcript = port.transcript
+        if state["node"] is not None:   # a unit in flight: continued on its thread, on the backend that started it (SS-11)
+            thread = state["node"]
+            entry = state["units"][thread]
+            port.replaying = True
+            unit = run.unit(entry["node"], entry["inputs"], "continue", thread)
+            result = await self._h.recorded(entry["backend"], run).run_node(unit)
+            await self._ended(thread, entry["node"], result)
+        elif state["menu_waiting"]:
+            port.replaying = True
+            await self._menu()
+        elif transcript and "user" in transcript[-1]:   # the routing run stopped before it entered anything
+            await self._route(run)
+        elif transcript and "agent" in transcript[-1]:
+            port.replaying = True
+            await port.person.tell(transcript[-1]["agent"])

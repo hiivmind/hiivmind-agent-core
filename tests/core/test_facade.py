@@ -481,8 +481,8 @@ async def test_an_extension_of_an_unknown_kind_is_refused(toy, open_harness):
 # --- features a backend does not carry out -----------------------------------------------------------------------------
 
 
-async def test_sessions_are_not_built(toy, open_harness):                                  # FAC-5, example 6
-    toy()
+async def test_sessions_refuse_a_backend_that_does_not_build_them(toy, open_harness):        # FAC-5, example 6
+    toy()   # the toy's F6 is `not built`
     harness = open_harness(FIXTURE, **spike())
     with pytest.raises(FeatureNotSupported) as e:
         harness.sessions
@@ -490,11 +490,17 @@ async def test_sessions_are_not_built(toy, open_harness):                       
     assert (e.value.feature, e.value.backend, e.value.entry) == (Feature.F6, "toy", Entry("not built", "sessions, step 7"))
 
 
-async def test_sessions_raise_whatever_the_backend_says_of_them_for_none_is_built_in_this_delivery(toy, open_harness):
-    toy(entries={Feature.F6: Entry("native", "the SDK's checkpointer")})
-    harness = open_harness(FIXTURE, **spike())
-    with pytest.raises(FeatureNotSupported, match="sessions, step 7"):
-        harness.sessions
+@pytest.mark.parametrize("state", ["divergent", "not built"])
+async def test_sessions_refuse_a_backend_whose_routing_is_not_built(toy, open_harness, state):   # FAC-5
+    toy(entries={Feature.F6: Entry("helper", "toy"), Feature.F17: Entry(state, "no routing here")})
+    with pytest.raises(FeatureNotSupported) as e:
+        open_harness(FIXTURE, **spike()).sessions
+    assert (e.value.feature, e.value.entry) == (Feature.F17, Entry(state, "no routing here"))
+
+
+async def test_sessions_are_offered_where_the_backend_builds_them(toy, open_harness):          # FAC-5, SS-1
+    toy(entries={Feature.F6: Entry("native", "the SDK's checkpointer"), Feature.F17: Entry("helper", "the core's routing run")})
+    assert isinstance(open_harness(FIXTURE, **spike()).sessions, facade.Sessions)
 
 
 async def test_the_event_record_is_refused_where_tracing_is_divergent_or_not_built(toy, open_harness):   # FAC-5, example 6

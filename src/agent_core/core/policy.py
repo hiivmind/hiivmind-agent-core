@@ -6,7 +6,7 @@ returns what changed as a `StateUpdate`.
 
 import copy
 import json
-from collections.abc import Awaitable, Callable, Iterable, Mapping
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Annotated, Any
 
@@ -57,6 +57,24 @@ def together(names: Iterable[str]) -> str:
     )
 
 
+def review_calls(calls: Sequence[ToolCall], offered: frozenset[str], ended: bool) -> Review:
+    """The response rules, written once for a node run and the routing run (P22): after the run has ended nothing runs
+    (CTL-7); an alone verb beside another call refuses them all (VERB-6a, VERB-6b); a call not offered is refused
+    (NODE-6b)."""
+    if ended:
+        return Review({c.id: "not run: the node run has ended" for c in calls})
+    if len(calls) > 1 and any(c.name in _BY_NAME and _BY_NAME[c.name].alone for c in calls):
+        refusal = together(v.name for v in VERBS if v.alone and v.name in offered)
+        return Review({c.id: refusal for c in calls})
+    return Review({c.id: f"refused: `{c.name}` is not declared by the node that is running" for c in calls if c.name not in offered})
+
+
+def argument_errors(name: str, error: ValidationError) -> str:
+    """A verb's arguments that do not validate, as the call's result: the model's to correct (Q3)."""
+    why = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'arguments'}: {err['msg']}" for err in error.errors())
+    return f"error: `{name}`: {why}"
+
+
 class NodePolicy:
     def __init__(
         self,
@@ -102,19 +120,7 @@ class NodePolicy:
 
     def review(self, response: ModelResponse, state: NodeState) -> Review:
         """Refuse before any call of the response runs (VERB-6a, VERB-6b, NODE-6b, CTL-7)."""
-        calls = response.calls
-        if state["ending"] is not None:
-            return Review({c.id: "not run: the node run has ended" for c in calls})
-        if len(calls) > 1 and any(c.name in _BY_NAME and _BY_NAME[c.name].alone for c in calls):
-            refusal = together(v.name for v in VERBS if v.alone and v.name in self._offered)
-            return Review({c.id: refusal for c in calls})
-        return Review(
-            {
-                c.id: f"refused: `{c.name}` is not declared by the node that is running"
-                for c in calls
-                if c.name not in self._offered
-            }
-        )
+        return review_calls(response.calls, self._offered, state["ending"] is not None)
 
     async def responded(self, response: ModelResponse, state: NodeState) -> str | None:
         """A response arrived. Nobody is there to reply in a job: a stop without a call ends the run (JOB-12). In a session
@@ -138,8 +144,7 @@ class NodePolicy:
                 try:
                     args = verb.args.model_validate(args).model_dump()
                 except ValidationError as e:  # the model's to correct, as a wrong outcome is (Q3)
-                    why = "; ".join(f"{'.'.join(map(str, err['loc'])) or 'arguments'}: {err['msg']}" for err in e.errors())
-                    return CallResult(f"error: `{name}`: {why}", error=True)
+                    return CallResult(argument_errors(name, e), error=True)
             return await verb.body(self, args, state)
         if name in self._functions:
             return self._function(self._functions[name], args, state)
@@ -299,12 +304,12 @@ class Verb:
     alone: bool  # must be the only call in a response (VERB-6)
     in_job: bool  # offered to a job's node
     checked: bool  # its arguments are validated before the body runs; `exit` checks its own (CD-7)
-    body: Callable[[NodePolicy, dict, NodeState], Awaitable[CallResult]] | None  # None: comes with sessions
+    body: Callable[[NodePolicy, dict, NodeState], Awaitable[CallResult]] | None  # None: the routing run's (core/routing.py)
 
 
 VERBS: tuple[Verb, ...] = (
-    Verb("enter", EnterArgs, "Enter another node of this instance, with the inputs it declares.",
-         "enter another node of this instance, with the inputs it declares.",
+    Verb("enter", EnterArgs, "Start a node or a sequence of this instance, with the inputs it declares.",
+         "start a node or a sequence of this instance, with the inputs it declares.",
          alone=True, in_job=False, checked=True, body=None),
     Verb("exit", ExitArgs, "End the node that is running with one of its outcomes and the outputs it declares.",
          "finish the node that is running, with one of its outcomes and the outputs it declares.",

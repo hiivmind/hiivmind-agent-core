@@ -26,8 +26,8 @@ from agent_core.contracts.backend import Backend
 from agent_core.contracts.context import HandoverRequest
 from agent_core.contracts.errors import FeatureNotSupported, RunCannotStart, ToolError, ToolServerError
 from agent_core.contracts.events import Event, NodeStarted
-from agent_core.contracts.facade import Events, Extensions, Nodes, SequenceResult, Sequences, Tools
-from agent_core.contracts.matrix import Entry, Feature
+from agent_core.contracts.facade import Events, Extensions, Nodes, SequenceResult, Sequences, SessionResult, Sessions, Tools
+from agent_core.contracts.matrix import Feature
 from agent_core.contracts.person import Person, Question
 from agent_core.contracts.policy import NodeState, Policy
 from agent_core.contracts.resources import ResourceSource
@@ -43,21 +43,18 @@ from agent_core.core.functions import FunctionTool, describe, import_declared
 from agent_core.core.instance import Instance, InstanceError, load_instance
 from agent_core.core.macro import Macro
 from agent_core.core.policy import NodePolicy
-from agent_core.core.record import build, failure, masked, notes
+from agent_core.core.record import build, failure, masked, notes, now
 from agent_core.core.registry import BackendNotInstalled, UnknownBackend, UnknownProvider
 from agent_core.core.registry import backend as registered_backend
 from agent_core.core.registry import provider as registered_provider
-from agent_core.core.session import SessionPort
+from agent_core.core.routing import unknown_name
+from agent_core.core.session import Session, SessionPort, check_topology, new_state
 from agent_core.core.settings import SettingsError, load_settings
 from agent_core.core.templates import TemplateError, render
 
 KINDS = ("backend", "context", "person", "resources", "journal", "store")
 OPENING = "Run the node."
 RUN_ID = re.compile(r"(.+)-\d{8}T\d{6}Z-[0-9a-f]{6}")
-
-
-def _now() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def new_run_id(sequence: str) -> str:
@@ -323,6 +320,37 @@ class _Sequences:
         return await self._h.sequence(new, lambda macro: macro.rerun(new, run_id, from_step), run_dir)
 
 
+class _Sessions:
+    """Sessions at the terminal (SS-1): started, or resumed by their id, with the harness's person."""
+
+    def __init__(self, harness: Harness):
+        self._h = harness
+
+    def _store(self):
+        return self._h.lookup("store", "file")(self._h.runs)
+
+    async def start(self, name: str | None = None, *, session_id: str | None = None) -> SessionResult:
+        h = self._h
+        topology = h.instance.topology
+        if name is not None and name not in topology.nodes and name not in topology.sequences:
+            raise RunCannotStart(unknown_name(topology, name))   # GW-4c
+        check_topology(h.instance)   # SS-12
+        session_id, store, state = session_id or new_run_id("session"), self._store(), new_state()
+        store.save(session_id, state)
+        return await Session(h, session_id, state, store, h.person()).run(name)
+
+    async def resume(self, session_id: str) -> SessionResult:
+        h = self._h
+        check_topology(h.instance)
+        store = self._store()
+        state = store.load(session_id)
+        if state is None:
+            raise RunCannotStart(f"no session {session_id}")   # E9
+        if state["status"] == "ended":
+            raise RunCannotStart(f"session {session_id} has ended")   # E9
+        return await Session(h, session_id, state, store, h.person()).resume()
+
+
 class _Tools:
     def __init__(self, harness: Harness):
         self._h = harness
@@ -396,6 +424,7 @@ class Harness:
         self._backends: dict[str, Backend] = {}
         self._closed = False
         self.nodes, self.sequences, self.tools = _Nodes(self), _Sequences(self), _Tools(self)
+        self._sessions = _Sessions(self)
         self.events, self.extensions = _Events(self), _Extensions(self)
         if isinstance(self._person, str):
             self.lookup("person", self._person)  # a name the registry does not know stops `open`
@@ -449,7 +478,7 @@ class Harness:
         env = {**os.environ, "AGENT_CORE_INSTANCE": str(self.root), "AGENT_CORE_RUN_DIR": str(run_dir or self.runs)}
         servers = None
         try:
-            person = self._person if not isinstance(self._person, str) else self.lookup("person", self._person)()
+            person = self.person()
             resources = self.lookup("resources", "folder")(self.root)
             chosen = backend or self.backend(None)
             servers = chosen.servers(dict(self.servers), self.root, env)
@@ -467,7 +496,7 @@ class Harness:
     ) -> SequenceResult:
         """Run a sequence as one journalled run under `run_id`, and keep its record (§4.6, §4.7). A run that raises ends
         `failed`: the record says why, and what the walk had reached (JOB-17, RESUME-2)."""
-        start = _now()
+        start = now()
         run_dir = (run_dir or self.runs / run_id).resolve()
         run = await self.begin(run_dir)
         try:
@@ -493,7 +522,7 @@ class Harness:
             await run.end()
         record = build(
             params=self.params, settings_files=self.settings_files, backend=self.backend_name, attended=self.attended,
-            start=start, end=_now(), failures=run.failures, events=self.hub.record(), labels=run.labels, run_id=run_id,
+            start=start, end=now(), failures=run.failures, events=self.hub.record(), labels=run.labels, run_id=run_id,
             sequence=sequence, result=result, error=error, progress=macro.progress,
         )
         # a result the journal stored before outputs were kept has none
@@ -505,12 +534,19 @@ class Harness:
     # --- the facade -------------------------------------------------------------------------------------------
 
     @property
-    def sessions(self) -> object:
-        """Sessions are step 7: nothing of them is built (FAC-5). The backend's own entry is the reason when it says so."""
-        entry = self.backend(None).features()[Feature.F6]
-        if entry.state not in ("divergent", "not built"):
-            entry = Entry("not built", "sessions, step 7")
-        raise FeatureNotSupported(Feature.F6, self.backend_name, entry)
+    def sessions(self) -> Sessions:
+        """Refused where the default backend declares session persistence or routing `divergent` or `not built` (FAC-5)."""
+        self.require(Feature.F6)
+        self.require(Feature.F17)
+        return self._sessions
+
+    def person(self) -> Person:
+        """The person given at `open`: a `Person`, or one made from the registry by its name."""
+        return self._person if not isinstance(self._person, str) else self.lookup("person", self._person)()
+
+    def recorded(self, name: str | None, run: _Run) -> _Recorded:
+        """The backend `name` (None: the default) as `run` uses it: its failures go into the run's record."""
+        return _Recorded(self.backend(name), run)
 
     async def close(self) -> None:
         """Close the backends this harness made."""

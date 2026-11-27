@@ -80,15 +80,14 @@ def test_the_matrix_holds_an_entry_for_every_feature_and_builds_what_it_declares
     matrix = ScriptedBackend(ScriptedSettings()).features()
     assert set(matrix) == set(Feature)
     helpers = {f.id for f, e in matrix.items() if e.state == "helper"}
-    assert helpers == {"F1", "F2", "F3", "F4", "F5", "F7", "F8", "F9", "F11", "F15", "F16", "F18", "F21"}
+    assert helpers == {"F1", "F2", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F11", "F15", "F16", "F17", "F18", "F21"}
     assert matrix[Feature.F7] == Entry(
         "helper", "macro resume by the core's journal; a unit in flight runs again from its start"
     )
+    assert matrix[Feature.F6] == Entry("helper", "the core's session store; a unit in flight runs again from its start")
     assert {f.id: e for f, e in matrix.items() if e.state == "not built"} == {
         **{f: Entry("not built", "no model") for f in ("F10", "F12", "F13", "F14", "F20", "F24")},
         "F19": Entry("not built", "deferred: no consumer in this delivery"),
-        "F6": Entry("not built", "sessions, step 7"),
-        "F17": Entry("not built", "sessions, step 7"),
         "F22": Entry("not built", "reserved"),
         "F23": Entry("not built", "deferred"),
     }

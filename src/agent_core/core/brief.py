@@ -11,17 +11,24 @@ from agent_core.core.templates import render
 
 INSIDE_A_NODE = "## Inside a node"
 STAYING_ON_THE_TASK = "## Staying on the task"
+ROUTING = "## Routing"
 
 
 def _engine(offered: tuple[Verb, ...]) -> str:
     """ENGINE.md with its verb list and its alone rule written from the verbs offered (CD-3)."""
     verbs = "\n".join(f"- `{v.name}({', '.join(v.args.model_fields)})`: {v.meaning}" for v in offered)
     names = [v.name for v in offered if v.alone]
-    alone = (
-        f"- {joined(names)} must each be the only call in a response. If you send "
-        f"{'either' if len(names) == 2 else 'one of them'} beside another call, none of the calls runs and you must "
-        "send them again, separately."
-    )
+    if len(names) == 1:
+        alone = (
+            f"- {joined(names)} must be the only call in a response. If you send it beside another call, none of the calls "
+            "runs and you must send them again, separately."
+        )
+    else:
+        alone = (
+            f"- {joined(names)} must each be the only call in a response. If you send "
+            f"{'either' if len(names) == 2 else 'one of them'} beside another call, none of the calls runs and you must "
+            "send them again, separately."
+        )
     return _asset("ENGINE.md").replace("<!-- verbs -->", verbs).replace("<!-- alone -->", alone)
 
 
@@ -88,3 +95,27 @@ def make_brief(
     )
     offered = offer(node, tools)
     return "\n\n".join(text for _, text in parts), offered, tuple((source, len(text)) for source, text in parts)
+
+
+def make_routing_brief(
+    instance: Instance, guide: str | None
+) -> tuple[str, tuple[ToolSpec, ...], tuple[tuple[str, int], ...]]:
+    """The brief of a session's routing run (SCOPE-6): the engine's rules and its *Routing* section, the instance's routing
+    guide where it has one (ENG-8), and the nodes, each with its description and its inputs (NODE-8b), and the
+    sequences. Its one tool is `enter`."""
+    enter = next(v for v in VERBS if v.name == "enter")
+    engine = _engine((enter,))
+    topology = instance.topology
+    nodes = "\n".join(
+        f"- `{name}`: {node.description} Inputs: {', '.join(node.contract.inputs) or 'none'}"
+        for name, node in instance.nodes.items()
+    )
+    sequences = "\n".join(f"- `{name}`: {sequence.description}" for name, sequence in topology.sequences.items())
+    parts = (
+        ("engine: rules", engine.split(INSIDE_A_NODE, 1)[0].strip()),
+        ("engine: routing", _section(engine, ROUTING)),
+        *((("routing guide: GATEWAY.md", guide.strip()),) if guide else ()),
+        ("topology: nodes", f"# The nodes you may start\n\n{nodes}"),
+        ("topology: sequences", f"# The sequences you may start\n\n{sequences or 'none'}"),
+    )
+    return "\n\n".join(text for _, text in parts), (verb_spec(enter),), tuple((source, len(text)) for source, text in parts)

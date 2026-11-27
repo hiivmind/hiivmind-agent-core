@@ -25,6 +25,8 @@ from agent_core.helpers.walk import walk_fragment
 
 _HELPERS = {
     Feature.F1: "the script player",
+    Feature.F6: "the core's session store; a unit in flight runs again from its start",
+    Feature.F17: "the core's routing run (ORC-7)",
     Feature.F2: "core policy",
     Feature.F3: "helpers.mcp",
     Feature.F4: "core policy",
@@ -43,8 +45,6 @@ _NOT_BUILT = {
         (Feature.F10, Feature.F12, Feature.F13, Feature.F14, Feature.F20, Feature.F24), "no model"
     ),
     Feature.F19: "deferred: no consumer in this delivery",
-    Feature.F6: "sessions, step 7",
-    Feature.F17: "sessions, step 7",
     Feature.F22: "reserved",
     Feature.F23: "deferred",
 }
