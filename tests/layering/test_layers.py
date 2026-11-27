@@ -6,7 +6,7 @@ from pathlib import Path
 SRC = Path(__file__).resolve().parents[2] / "src"
 PKG = SRC / "agent_core"
 SDKS = {"langchain", "langgraph", "langchain_core", "langchain_anthropic", "anthropic", "openai", "langchain_openai", "agents", "google", "agno", "crewai"}
-PROVIDERS = {"backends", "journals", "person", "resources", "context"}
+PROVIDERS = {"backends", "journals", "person", "resources", "context", "stores"}
 HELPERS = {"helpers"}
 
 

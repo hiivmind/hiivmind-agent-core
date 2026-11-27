@@ -81,7 +81,7 @@ class Events(Protocol):
 
 @runtime_checkable
 class Extensions(Protocol):
-    def register(self, kind: str, name: str, provider: object) -> None: ...   # kinds: backend, context, person, resources, journal
+    def register(self, kind: str, name: str, provider: object) -> None: ...   # kinds: backend, context, person, resources, journal, store
 
 
 @runtime_checkable

@@ -25,6 +25,7 @@ PROVIDERS: dict[str, dict[str, str]] = {
         "none": "agent_core.journals.none",
         "dbos": "agent_core.journals.dbos",
     },
+    "store": {"file": "agent_core.stores.file"},
 }
 
 

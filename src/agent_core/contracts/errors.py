@@ -37,3 +37,9 @@ class FeatureNotSupported(Exception):
 
 class RunCannotStart(Exception):
     """The one line `agent-core job` prints before exit 2."""
+
+
+class SessionWaits(BaseException):
+    """The person has gone: `hear` or `ask` gave None in a session. A `BaseException`, as `KeyboardInterrupt` is, so that
+    nothing that catches `Exception` records it: the run that asked stops unrecorded, and the session saves and waits
+    (SS-5). A backend lets it out of `run_node` and `run_fragment` as it was raised (SS-6)."""

@@ -474,7 +474,7 @@ async def test_a_person_a_client_registers_under_a_known_name_is_the_one_the_nex
 async def test_an_extension_of_an_unknown_kind_is_refused(toy, open_harness):
     toy()
     harness = open_harness(FIXTURE, **spike())
-    with pytest.raises(ValueError, match="no extension kind `tool_source`; the kinds are: backend, context, person, resources, journal"):
+    with pytest.raises(ValueError, match="no extension kind `tool_source`; the kinds are: backend, context, person, resources, journal, store"):
         harness.extensions.register("tool_source", "x", object)
 
 

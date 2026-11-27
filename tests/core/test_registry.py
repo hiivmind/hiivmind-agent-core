@@ -23,6 +23,7 @@ def test_the_tables_name_the_backends_and_the_providers_of_v0():
         "resources": {"folder": "agent_core.resources.folder"},
         "person": {"terminal": "agent_core.person.terminal", "nobody": "agent_core.person.nobody"},
         "journal": {"none": "agent_core.journals.none", "dbos": "agent_core.journals.dbos"},
+        "store": {"file": "agent_core.stores.file"},
     }
 
 

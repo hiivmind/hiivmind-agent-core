@@ -48,7 +48,7 @@ from agent_core.core.registry import provider as registered_provider
 from agent_core.core.settings import SettingsError, load_settings
 from agent_core.core.templates import TemplateError, render
 
-KINDS = ("backend", "context", "person", "resources", "journal")
+KINDS = ("backend", "context", "person", "resources", "journal", "store")
 OPENING = "Run the node."
 RUN_ID = re.compile(r"(.+)-\d{8}T\d{6}Z-[0-9a-f]{6}")
 
