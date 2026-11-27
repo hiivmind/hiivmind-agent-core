@@ -77,10 +77,8 @@ class PolicyHook(AgentMiddleware):
     async def aafter_model(self, state, runtime):
         response = self._response(state["messages"][-1])
         self._events.emit(ModelResponded(self._policy.label, response))   # before any of its calls runs
-        if response.calls:
-            return None
-        told = self._policy.stopped(response.text, state["node"])
-        if told is None:
+        told = await self._policy.responded(response, state["node"])
+        if response.calls or told is None:
             return None
         return {"messages": [HumanMessage(told)], "jump_to": "model"}   # carry on the same conversation (KIT-10)
 

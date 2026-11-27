@@ -114,3 +114,6 @@ class ToyPerson:
         finally:
             self.open -= 1
 
+    async def hear(self):
+        return None
+

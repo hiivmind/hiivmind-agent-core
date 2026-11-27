@@ -79,6 +79,9 @@ class Answering:
         self.asked.append(question)
         return self.answer
 
+    async def hear(self):
+        return None
+
 
 class Events:
     def __init__(self):
@@ -508,9 +511,10 @@ async def test_after_the_run_has_ended_a_call_is_refused_and_not_run(made):     
     assert p.state["ending"]["outcome"] == "failed" and p.state["ending"]["outputs"] == {}
 
 
-async def test_the_model_stopping_ends_a_job_without_a_reply(made):                    # JOB-12
+async def test_a_job_policy_tells_the_model_nothing_after_a_response(made):           # JOB-12
     policy = made("silent")
-    assert policy.stopped("I will not exit.", policy.initial()) is None
+    assert await policy.responded(ModelResponse("I will not exit.", ()), policy.initial()) is None
+    assert await policy.responded(ModelResponse("", (ToolCall("c1", "state_get", {"key": "x"}),)), policy.initial()) is None
 
 
 async def test_finish_turns_an_ending_into_a_unit_result(made):

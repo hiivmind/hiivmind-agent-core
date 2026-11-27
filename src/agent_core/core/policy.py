@@ -112,8 +112,8 @@ class NodePolicy:
             }
         )
 
-    def stopped(self, said: str, state: NodeState) -> str | None:
-        """The model stopped without a call. Nobody is there to reply in a job: the run ends (JOB-12)."""
+    async def responded(self, response: ModelResponse, state: NodeState) -> str | None:
+        """A response arrived. Nobody is there to reply in a job: a stop without a call ends the run (JOB-12)."""
         return None
 
     # --- a call ----------------------------------------------------------------------------------------------

@@ -121,9 +121,10 @@ class ScriptedBackend:
                 break
             events.emit(ModelRequested(policy.label, _request(policy, conversation)))
             if isinstance(step, str):  # the model says something and makes no call
-                events.emit(ModelResponded(policy.label, ModelResponse(step, ())))
+                response = ModelResponse(step, ())
+                events.emit(ModelResponded(policy.label, response))
                 said = step
-                reply = policy.stopped(step, state)
+                reply = await policy.responded(response, state)
                 if reply is None:
                     break
                 conversation += [Message("agent", step), Message("user", reply)]
@@ -134,6 +135,7 @@ class ScriptedBackend:
                 calls.append(ToolCall(f"{policy.label}-{made}", name, args))
             response = ModelResponse("", tuple(calls))
             events.emit(ModelResponded(policy.label, response))
+            await policy.responded(response, state)  # before any call of it runs (SS-7); a reply is only for a stop
             review = policy.review(response, state)  # the whole response, before any call of it runs
             updates = []
             for call in calls:

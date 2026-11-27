@@ -24,6 +24,9 @@ class Person:
         self.asked.append((f"{question.node}#{question.number}", question.text))
         return self.answer
 
+    async def hear(self):
+        return None
+
 
 @pytest.mark.feature("F8")
 async def test_the_persons_answer_is_the_result_of_the_call(harness):

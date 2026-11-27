@@ -63,7 +63,7 @@ class StatePolicy:
             return CallResult("error: boom", error=True)   # a failed call carries no update
         return CallResult("exited", update=StateUpdate(ending=Ending("done", {"who": state["values"]["who"]})))
 
-    def stopped(self, said, state):
+    async def responded(self, response, state):
         return None
 
     def finish(self, state, said):

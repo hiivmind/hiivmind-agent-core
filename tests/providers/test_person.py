@@ -59,3 +59,18 @@ async def test_terminal_puts_one_question_at_a_time(monkeypatch):               
     person = Terminal()
     answers = await asyncio.gather(*(person.ask(Question(f"q{n}", "node", n, {})) for n in range(3)))
     assert most == 1 and answers == [f"[node#{n}] q{n}\n> " for n in range(3)]
+
+
+async def test_the_terminal_hears_a_line(monkeypatch, capsys):                                # SS-2
+    monkeypatch.setattr("sys.stdin", io.StringIO("polars\n"))
+    assert await Terminal().hear() == "polars"
+    assert capsys.readouterr().out == "> "
+
+
+async def test_the_terminal_hears_nothing_at_the_end_of_input(monkeypatch):                  # SS-2
+    monkeypatch.setattr("sys.stdin", io.StringIO(""))
+    assert await Terminal().hear() is None
+
+
+async def test_nobody_hears_nothing():
+    assert await Nobody().hear() is None

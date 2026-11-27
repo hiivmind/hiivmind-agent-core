@@ -83,6 +83,10 @@ class _Asking:
         async with self._lock:
             return await self._person.ask(question)
 
+    async def hear(self) -> str | None:
+        async with self._lock:
+            return await self._person.hear()
+
 
 class _Recorded:
     """A backend as one run uses it: a failed node run, and a tool server that could not be reached, go into the run's

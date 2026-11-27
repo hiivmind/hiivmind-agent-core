@@ -19,7 +19,7 @@ class Replying:
     label, node, instructions, tools, handover, opening = "n#1", "n", "instructions", (), (), "go"
 
     def __init__(self, reply=None):
-        self.reply, self.stops, self.calls = reply, [], []
+        self.reply, self.stops, self.calls, self.seen = reply, [], [], []
 
     def initial(self):
         return {"inputs": {}, "values": {}, "outputs": {}, "session": {}, "rejections": 0, "ending": None}
@@ -29,10 +29,14 @@ class Replying:
 
     async def call(self, call, state):
         self.calls.append(call.name)
+        self.seen.append(("call", call.name))
         return CallResult("ok")
 
-    def stopped(self, said, state):
-        self.stops.append(said)
+    async def responded(self, response, state):
+        self.seen.append(("responded", len(response.calls)))
+        if response.calls:
+            return None
+        self.stops.append(response.text)
         return self.reply
 
     def finish(self, state, said):
@@ -132,3 +136,9 @@ async def test_a_missing_script_file_names_the_file(tmp_path):
 async def test_without_the_setting_the_backend_says_so():
     with pytest.raises(ValueError, match="SCRIPTS"):
         await ScriptedBackend(ScriptedSettings()).run_node(unit_of(Replying()))
+
+
+async def test_each_response_is_given_to_the_policy_once_before_its_calls_run(tmp_path):   # SS-7
+    policy = Replying(None)
+    await with_scripts(tmp_path, n=[[["a", {}], ["b", {}]], "done"]).run_node(unit_of(policy))
+    assert policy.seen == [("responded", 2), ("call", "a"), ("call", "b"), ("responded", 0)]
