@@ -50,10 +50,10 @@ def session_port(tmp_path, person=None):
     return port
 
 
-async def run_in_session(h, port, node, intent="start"):
+async def run_in_session(h, port, node, intent="start", thread="s/1"):
     run = await h.begin(h.runs / "s", session=port)
     try:
-        return await h.backend(None).run_node(run.unit(node, {}, intent, "s/1"))
+        return await h.backend(None).run_node(run.unit(node, {}, intent, thread))
     finally:
         await run.end()
 
@@ -91,6 +91,15 @@ async def test_a_summary_is_not_told_to_the_person(harness, copied, tmp_path):  
     h = harness(scripts, instance=with_context(copied, "record", "summary"))
     await run_in_session(h, session_port(tmp_path, person), "record")
     assert person.told == []
+
+
+@pytest.mark.feature("F9")
+async def test_each_summary_of_a_harness_has_a_label_of_its_own(harness, copied, tmp_path):   # SCOPE-7, final review 10
+    scripts = {"record": [[["exit", {"outcome": "done", "outputs": {"note": "n"}}]]], "@summary": ["The user asked for alpha."]}
+    h = harness(scripts, instance=with_context(copied, "record", "summary"))
+    await run_in_session(h, session_port(tmp_path), "record")
+    await run_in_session(h, session_port(tmp_path), "record", thread="s/2")
+    assert len({e.label for e in summaries(h)}) == 2
 
 
 @pytest.mark.feature("F9")

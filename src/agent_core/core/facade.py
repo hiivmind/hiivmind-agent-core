@@ -129,9 +129,9 @@ class _Run:
         self._h, self.declared, self.functions, self.settings = harness, declared, functions, settings
         self.resources, self.person, self.run_dir = resources, person, run_dir
         self.backend_name, self.session = backend_name, session
-        self.labels: list[str] = []
-        self.summaries = 0
-        self.failures: list[dict] = []
+        # a session's runs share its labels and failures, so that its record holds each of them (design §3.6)
+        self.labels: list[str] = session.labels if session is not None else []
+        self.failures: list[dict] = session.failures if session is not None else []
 
     async def end(self) -> None:
         """Close the run's servers."""
@@ -181,8 +181,9 @@ class _Run:
         """What the model says to `text` under the instructions `system`, in a unit with no tools on the run's backend: a
         run of its own, with a label and a note, and told to nobody (design §3.7, SCOPE-7)."""
         h = self._h
-        self.summaries += 1
-        label = f"{SUMMARY}#{self.summaries}"
+        h.summaries += 1   # the harness's count: every run's events go into the one hub
+        number = h.summaries
+        label = f"{SUMMARY}#{number}"
         self.labels.append(label)
         policy = QuietPolicy(label=label, node=SUMMARY, instructions=system, opening=text, events=h.hub)
         h.hub.emit(NodeStarted(label, SUMMARY, (("summary instructions", len(system)),), ()))
@@ -190,7 +191,7 @@ class _Run:
         async def start(node: str, inputs: Mapping, thread: str) -> Policy:
             return policy
 
-        unit = Unit(SUMMARY, {}, "start", f"{SUMMARY}/{self.summaries}", start, self.declared, h.hub, h.instance.topology, self.call)
+        unit = Unit(SUMMARY, {}, "start", f"{SUMMARY}/{number}", start, self.declared, h.hub, h.instance.topology, self.call)
         result = await h.recorded(self.backend_name, self).run_node(unit)
         return result.outputs.get("summary", "")
 
@@ -260,7 +261,8 @@ class _Run:
             return UnitResult(FAILED, {}, reason=HarnessReason.UNKNOWN_PLACEHOLDER, detail={"detail": str(e)})
         if session is not None:
             session.save_unit(thread, {
-                **(entry or {}), "node": node, "inputs": dict(inputs), "backend": self.backend_name,
+                # a unit keeps the backend that started it, whatever runs the session now (ST-4)
+                **(entry or {}), "node": node, "inputs": dict(inputs), "backend": (entry or {}).get("backend", self.backend_name),
                 "instructions": instructions, "handover": [dataclasses.asdict(m) for m in handover], "parts": [list(p) for p in parts],
             })
         h.hub.emit(NodeStarted(label, node, parts, tuple(spec.name for spec in offered)))
@@ -449,6 +451,7 @@ class Harness:
         self.hub = EventHub()
         self.person_lock = asyncio.Lock()
         self.started = 0
+        self.summaries = 0
         self.functions: dict[str, FunctionTool] = {}
         self.servers: dict[str, dict] = {}
         self._person = person if person is not None else "nobody"
@@ -513,8 +516,8 @@ class Harness:
             resources = self.lookup("resources", "folder")(self.root)
             chosen = backend or self.backend(None)
             servers = chosen.servers(dict(self.servers), self.root, env)
-            if session is not None:   # a server that cannot be reached waits for the person (TOOL-11f)
-                servers = WaitingServers(servers, session.person)
+            if session is not None:   # a server that cannot be reached waits for the person (TOOL-11f), one at a time (JOB-6)
+                servers = WaitingServers(servers, _Asking(session.person, self.person_lock))
             functions = dict(self.functions)
             declared = await resolve(functions, servers, {name: name for name in self.servers})
         except BaseException:

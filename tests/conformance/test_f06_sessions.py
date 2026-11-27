@@ -147,6 +147,14 @@ async def test_only_the_outputs_the_steps_returned_are_merged(harness, tmp_path)
 
 
 @pytest.mark.feature("F6")
+async def test_a_sequences_node_runs_are_in_the_session_record(harness, tmp_path):   # §3.6, SCOPE-7, final review 3
+    saved(tmp_path, {}, "look up alpha and count")
+    scripts = {**routed_to("lookup_then_count", {"name": "alpha"}), "lookup": LOOKUP, "count": COUNT}
+    resumed = await harness(scripts, person=ScriptedPerson([None])).sessions.resume(SESSION)
+    assert [note.node for note in resumed.record.notes] == ["@routing", "lookup", "count"]
+
+
+@pytest.mark.feature("F6")
 async def test_a_failed_node_inside_a_sequence_is_told_and_is_in_the_transcript(harness, tmp_path):   # CTL-8, plan review A4
     saved(tmp_path, {}, "look up alpha")
     failed = [[["exit", {"outcome": "failed", "outputs": {"reason": "the register is closed"}}]]]

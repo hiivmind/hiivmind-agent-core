@@ -16,7 +16,7 @@ from agent_core.contracts.policy import CallResult, Ending, NodeState, Review, S
 from agent_core.contracts.topology import Topology
 from agent_core.contracts.unit import UnitResult
 from agent_core.contracts.values import FAILED, HarnessReason, Message, ModelResponse, ToolCall, ToolSpec
-from agent_core.core.checks import unknown_inputs
+from agent_core.core.checks import CheckError, unknown_inputs
 from agent_core.core.policy import EnterArgs, argument_errors, review_calls
 from agent_core.core.templates import TemplateError
 
@@ -83,7 +83,7 @@ class RoutingPolicy:
             return CallResult(refusal, error=True)
         try:
             unmet, writes = await self._check(name, inputs, state["session"])
-        except TemplateError as e:
+        except (TemplateError, CheckError) as e:   # a check that cannot be run is the model's to read (NODE-12)
             return CallResult(f"error: {e}", error=True)
         if unmet is not None:   # NODE-13: the check's message, and the run goes on
             return CallResult(unmet["message"], error=True)

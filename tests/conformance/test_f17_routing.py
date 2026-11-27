@@ -71,6 +71,18 @@ async def _refused(harness, call):
 
 
 @pytest.mark.feature("F17")
+async def test_routing_to_a_node_whose_check_cannot_be_run_is_an_error_the_run_reads(harness, copied):   # NODE-12, final review 5
+    node = copied / "nodes" / "record.md"
+    checks = "preconditions:\n  - {tool: lookup_revision, args: {name: nope}, message: never shown}\n"
+    node.write_text(node.read_text().replace("allowed-tools: []\n", f"allowed-tools: []\n{checks}", 1))
+    h = harness({"@routing": [[["enter", {"node": "record"}]], "I cannot."]}, instance=copied, person=ScriptedPerson(["do it", None]))
+    result = await h.sessions.start()
+    assert result.state == "waiting"
+    [text] = returned(h, "enter")
+    assert text.startswith("error: the precondition check for `record` could not be run")
+
+
+@pytest.mark.feature("F17")
 async def test_routing_to_an_unknown_name_is_refused_with_the_lists(harness):   # E4
     assert await _refused(harness, {"node": "refresh-all"}) == [
         f"no node or sequence `refresh-all`; the nodes are: {NODES}; the sequences are: {SEQUENCES}"

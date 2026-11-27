@@ -203,3 +203,22 @@ async def test_a_server_that_cannot_be_reached_waits_for_the_person(session, mon
     assert "`shell`" in told and "`run`" in told
     returned = [(e.text, e.error) for e in s.events(ToolReturned) if e.call.name == "shell__run"]
     assert returned == [("ok", False)]
+
+
+async def test_the_person_is_asked_to_put_a_server_right_under_the_harness_person_lock(session, monkeypatch):   # JOB-6, final review 6
+    from agent_core.backends.scripted import ScriptedBackend
+
+    real = ScriptedBackend.servers
+    monkeypatch.setattr(ScriptedBackend, "servers", lambda self, *a: _GoneOnce(real(self, *a)))
+    count = [[["shell__run", {"command": "echo 1"}]], [["exit", {"outcome": "done", "outputs": {"total": 1}}]]]
+    s = session({"count": count}, replies=["it is back"])
+    locked = []
+    hear = s.person.hear
+
+    async def heard():
+        locked.append(s.h.person_lock.locked())
+        return await hear()
+
+    s.person.hear = heard
+    await s.node("count", {"revisions": "r1"})
+    assert locked == [True]

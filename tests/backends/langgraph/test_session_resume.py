@@ -65,6 +65,14 @@ async def test_the_unit_in_flight_resumes_on_the_backend_that_started_it(opened)
     assert resumed.facts == {"colour": "red"}   # the scripted backend has no script for `ask`: it ran on LangGraph
 
 
+async def test_a_unit_left_again_after_a_resume_on_another_backend_keeps_its_backend(opened):   # SS-11, final review 1
+    left = await opened({"ask": ASK}, ScriptedPerson([])).sessions.start("ask")
+    again = await opened({"ask": ASK}, ScriptedPerson([]), backend="scripted").sessions.resume(left.session_id)
+    assert again.state == "waiting"
+    resumed = await opened({"ask": ASK}, ScriptedPerson(["red", None]), backend="scripted").sessions.resume(left.session_id)
+    assert resumed.facts == {"colour": "red"}   # still on LangGraph: the scripted backend has no script for `ask`
+
+
 ASKING = [[["ask", {"question": "Which?"}]], [["lookup_revision", {}]], [["exit", {"outcome": "done", "outputs": {}}]]]
 COUNT = [[["exit", {"outcome": "done", "outputs": {"total": 7}}]]]
 

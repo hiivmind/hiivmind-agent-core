@@ -66,6 +66,8 @@ class SessionPort:
         self.left = asyncio.Event()   # set when the person has gone
         self.replaying = False   # set while a unit in flight is resumed: what it tells again is not added again
         self.recorded: dict[str, dict] = {}   # by thread: the outputs a node run that ended set while it ran (NODE-9)
+        self.labels: list[str] = []   # every run of the session in this process, its sequences' included (SCOPE-7)
+        self.failures: list[dict] = []
         self.person = RecordingPerson(person, self)
 
     @property
@@ -154,7 +156,7 @@ class WaitingServers:
     person is told, with the server and the tool named, and any reply makes the same call again, until it works or the
     person has gone (SS-5). The model sees only the result that came in the end."""
 
-    def __init__(self, inner: ToolSource, person: RecordingPerson):
+    def __init__(self, inner: ToolSource, person: Person):
         self._inner, self._person = inner, person
 
     async def tools(self) -> tuple[ToolSpec, ...]:
@@ -204,8 +206,8 @@ class Session:
         state = "ended" if self.state["status"] == "ended" else "waiting"
         record = session_record(
             params=h.params, settings_files=h.settings_files, backend=h.backend_name, attended=h.attended, start=start,
-            end=now(), failures=run.failures, events=h.hub.record(), labels=run.labels, session_id=self.id, end_state=state,
-            facts=self.state["facts"],
+            end=now(), failures=self.port.failures, events=h.hub.record(), labels=self.port.labels, session_id=self.id,
+            end_state=state, facts=self.state["facts"],
         )
         return SessionResult(self.id, state, dict(self.state["facts"]), record, self.dir)
 
