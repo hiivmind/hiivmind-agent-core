@@ -36,5 +36,6 @@ class Terminal:
         async with _terminal_lock():
             try:
                 return await asyncio.get_running_loop().run_in_executor(None, input, prompt)
-            except EOFError:  # nothing more can be read: nobody is there
+            except EOFError:  # nothing more can be read: nobody is there; the prompt's line is ended
+                print(flush=True)
                 return None

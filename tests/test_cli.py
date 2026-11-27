@@ -136,12 +136,6 @@ def test_a_param_without_a_value_is_a_usage_error():
     assert e.value.code == 2
 
 
-def test_the_command_has_the_job_subcommand_only():
-    with pytest.raises(SystemExit) as e:
-        main(["run", str(FIXTURES / "instance" / "instance.yaml")])
-    assert e.value.code == 2
-
-
 def test_two_jobs_started_in_the_same_second_do_not_share_a_run_directory(tmp_path):   # review 14
     jobs = Jobs(tmp_path, "instance")
     for _ in range(2):
@@ -296,3 +290,82 @@ def test_a_record_that_cannot_be_written_exits_one_and_says_why(job):           
 def test_a_run_that_raised_still_writes_its_record_and_exits_one(job):                        # Review Focus 5
     ran = job(scripts={"plain": None})   # no script for `plain`: the backend raises when the node runs
     assert ran.code == 1 and ran.record["end_state"] == "failed"
+
+
+# --- agent-core run: a session at the terminal -------------------------------------------------------------------------
+
+CONFORMANCE = REPO / "tests" / "conformance" / "instance"
+NODES = "lookup, ask, record, count"
+SEQUENCES = "tallies, rosters, tolerates, lookup_then_count, pairs, singles"
+
+
+@pytest.fixture
+def session(tmp_path):
+    """`session(*args, stdin="", scripts=None)` runs `agent-core run` on a copy of the conformance instance in a subprocess,
+    with the scripted backend; the session's files are kept beside the copy. `session.instance` is the copy's file."""
+    import shutil
+
+    root = tmp_path / "instance"
+    shutil.copytree(CONFORMANCE, root, ignore=shutil.ignore_patterns("__pycache__", "runs"))
+    directory = tmp_path / "scripts"
+    directory.mkdir()
+    for node, steps in {"ask": ASK, "record": [[["exit", {"outcome": "done", "outputs": {"note": "n"}}]]]}.items():
+        (directory / f"{node}.json").write_text(json.dumps(steps))
+    environment = {**os.environ, "AGENT_CORE_SCRIPTED_SCRIPTS": str(directory), "AGENT_CORE_RUN_DIR": str(tmp_path)}
+
+    def run(*args, stdin=""):
+        command = [sys.executable, "-m", "agent_core.cli", "run", str(root / "instance.yaml"), *args]
+        return subprocess.run(command, input=stdin, capture_output=True, text=True, cwd=REPO, env=environment, timeout=300)
+
+    run.instance = root / "instance.yaml"
+    return run
+
+
+def _id(done) -> str:
+    first = done.stdout.splitlines()[0]
+    assert re.fullmatch(r"session session-\d{8}T\d{6}Z-[0-9a-f]{6}", first), done.stdout
+    return first.split()[1]
+
+
+def test_run_a_node_that_asks(session):                                                       # E3, RUN-1
+    done = session("ask", stdin="polars\n")
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert "[ask#1] Which colour?" in done.stdout
+    session_id = _id(done)
+    assert json.loads((session.instance.parent / "runs" / session_id / "record.json").read_text())["facts"] == {"colour": "red"}
+
+
+def test_run_then_resume(session):                                                            # E6
+    left = session("ask")
+    session_id = _id(left)
+    assert left.returncode == 0
+    assert left.stdout.splitlines()[-1] == (
+        f"session {session_id} saved; resume with: agent-core run {session.instance} --resume {session_id}"
+    )
+    resumed = session("--resume", session_id, stdin="red\n")
+    assert resumed.returncode == 0 and resumed.stdout.splitlines()[0] == f"session {session_id}"
+    assert "[ask#1] Which colour?" in resumed.stdout
+
+
+def test_run_a_name_that_is_neither_a_node_nor_a_sequence(session):                           # GW-4c
+    done = session("nope")
+    assert done.returncode == 2
+    assert done.stdout.splitlines()[-1] == f"error: no node or sequence `nope`; the nodes are: {NODES}; the sequences are: {SEQUENCES}"
+
+
+def test_resume_an_ended_session(session):                                                   # E9
+    topology = session.instance.parent / "topology.yaml"
+    topology.write_text(topology.read_text().replace("  done: route", "  done: end"))
+    ended = session("record")
+    assert ended.returncode == 0
+    session_id = _id(ended)
+    again = session("--resume", session_id)
+    assert again.returncode == 2 and again.stdout.splitlines()[-1] == f"error: session {session_id} has ended"
+
+
+def test_a_named_node_whose_check_fails_is_told_and_the_session_goes_on(session):              # Review Focus 4, GW-4b
+    done = session("lookup")
+    assert done.returncode == 0, done.stdout + done.stderr
+    told = done.stdout.splitlines()
+    assert "The register does not hold not given." in told
+    assert told[told.index("The register does not hold not given.") + 1].startswith("> ")   # then the person is heard
