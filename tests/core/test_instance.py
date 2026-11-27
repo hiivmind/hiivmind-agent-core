@@ -1,7 +1,7 @@
 import pytest
 from support import SEQUENCES, load
 
-from agent_core.contracts.topology import END, FanOut, FragmentDef, Link, NodeContract, SequenceDef, Step, ToolList
+from agent_core.contracts.topology import END, FanOut, FragmentDef, Link, MenuItem, NodeContract, SequenceDef, Step, ToolList
 from agent_core.core.instance import InstanceError, NodeDef
 
 
@@ -74,6 +74,14 @@ def test_bare_on_and_off_in_the_topology_are_read_as_on_and_off(broken):
 
 def test_a_topology_without_an_improvisation_block_has_none(sequences):
     assert sequences.improvisation is None
+
+
+def test_the_topology_loads_exits_menu_and_greeting(instance, sequences):   # GW-3, GW-6a, GW-8
+    topology = instance.topology
+    assert topology.exits == {"done": "route", "declined": "route", "failed": "route"}
+    assert topology.menu[0] == MenuItem("Refresh", "refresh") and len(topology.menu) == 4
+    assert topology.greeting is None and instance.entry == "topology.yaml"
+    assert (sequences.topology.exits, sequences.topology.menu) == ({"done": "route", "failed": "route"}, ())
 
 
 def test_a_node_file_that_is_missing_names_the_file(broken):

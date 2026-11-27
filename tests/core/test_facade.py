@@ -143,6 +143,12 @@ async def test_a_server_the_client_registers_is_reached_even_after_a_run(toy, op
     assert "echo later" in (tmp_path / "runs" / "tool_calls.jsonl").read_text()
 
 
+async def test_a_job_runs_on_a_topology_a_session_refuses(toy, open_harness, copy):   # SS-12: improvisation is on here
+    toy(PLAIN)
+    outcome = await open_harness(copy.root, **spike()).nodes.run("plain", {})
+    assert outcome.exit == "done"
+
+
 async def test_a_node_run_carries_on_after_a_cut_shell_output_and_the_result_says_how_much(toy, open_harness, tmp_path):   # R10
     root = tmp_path / "loud-instance"
     (root / "nodes").mkdir(parents=True)

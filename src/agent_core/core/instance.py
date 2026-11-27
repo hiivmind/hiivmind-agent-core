@@ -17,6 +17,7 @@ from agent_core.contracts.topology import (
     FanOut,
     FragmentDef,
     Link,
+    MenuItem,
     NodeContract,
     SequenceDef,
     Step,
@@ -57,6 +58,7 @@ def _outputs(outputs: dict, done: bool) -> Draft202012Validator:
 @dataclass(frozen=True)
 class Instance:
     root: Path
+    entry: str                        # the topology's file, as instance.yaml names it
     name: str
     core: int
     backend: str
@@ -245,9 +247,13 @@ def load_instance(instance_yaml: Path, resources: ResourceSource) -> Instance:
         nodes={name: n.contract for name, n in nodes.items()},
         sequences=_sequences(raw.get("sequences") or {}, targets),
         fragments=_fragments(raw_fragments, _Targets(entry, nodes, None)),
+        exits=dict(raw.get("exits") or {}),
+        menu=tuple(MenuItem(str(item.get("label", "")), str(item.get("node", ""))) for item in raw.get("menu") or ()),
+        greeting=raw.get("greeting"),
     )
     return Instance(
         root=Path(instance_yaml).resolve().parent,
+        entry=entry,
         name=data["name"],
         core=data["core"],
         backend=data["backend"],
