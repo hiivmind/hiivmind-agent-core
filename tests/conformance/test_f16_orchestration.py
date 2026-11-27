@@ -189,3 +189,19 @@ async def test_an_item_the_provider_refused_is_run_once_more_from_a_fresh_contex
     sent = [e for e in h.events.record() if isinstance(e, ModelRequested)]
     lengths = [len(next(p for p in e.parts if p.kind == "conversation").messages) for e in sent[:4]]
     assert lengths == [1, 2, 1, 2]   # the second run starts again from the opening, and does not carry the first run's call
+
+
+@pytest.mark.feature("F16")
+async def test_each_run_of_a_fan_out_starts_with_a_thread_of_its_own(harness, monkeypatch):   # SS-14, design §3.2
+    from agent_core.core.facade import _Run
+
+    started, real = [], _Run.start
+
+    async def start(self, node, inputs, thread):
+        started.append((node, thread))
+        return await real(self, node, inputs, thread)
+
+    monkeypatch.setattr(_Run, "start", start)
+    await harness(SCRIPTS).sequences.run("pairs", {"names": ["alpha", "beta"]})
+    threads = [thread for node, thread in started if node == "lookup"]
+    assert len(threads) == 2 and len(set(threads)) == 2 and all(threads)

@@ -49,7 +49,7 @@ class Sink:
 
 
 def unit_of(policy, node="n"):
-    async def start(name, inputs):
+    async def start(name, inputs, thread):
         return policy
 
     return Unit(node, {}, "start", "", start, None, Sink(), None, None)
@@ -114,7 +114,7 @@ async def test_a_string_step_the_policy_does_not_answer_ends_the_run(tmp_path):
 
 
 async def test_a_node_that_does_not_start_is_not_played(tmp_path):
-    async def start(name, inputs):
+    async def start(name, inputs, thread):
         return UnitResult("skipped", {})
 
     result = await ScriptedBackend(ScriptedSettings()).run_node(Unit("n", {}, "start", "", start, None, None, None, None))

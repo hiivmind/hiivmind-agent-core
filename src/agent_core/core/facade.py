@@ -179,9 +179,9 @@ class _Run:
             name, inputs, intent, thread, self.start, self.declared, h.hub, h.instance.topology, self.call, fragment, self.run_dir
         )
 
-    async def start(self, node: str, inputs: Mapping) -> Policy | UnitResult:
+    async def start(self, node: str, inputs: Mapping, thread: str) -> Policy | UnitResult:
         """The node start (NODE-11 to NODE-13a): the declared checks, the brief and the hand-over; a `Policy`, or the result of
-        a node that does not start."""
+        a node that does not start. `thread` is the unit's checkpoint thread."""
         h = self._h
         found = h.instance.nodes[node]
         contract = found.contract

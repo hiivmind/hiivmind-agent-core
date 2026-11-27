@@ -158,7 +158,7 @@ async def test_settings_and_state_never_reach_the_model(tmp_path):   # TOOL-12
 
 
 def _unit(policy, thread):
-    async def start(node, inputs):
+    async def start(node, inputs, thread):
         return policy
 
     async def call_tool(name, args):

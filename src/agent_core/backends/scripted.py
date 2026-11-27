@@ -97,7 +97,7 @@ class ScriptedBackend:
         return json.loads((Path(scripts) / f"{node}.json").read_text())
 
     async def run_node(self, unit: Unit) -> UnitResult:
-        policy = await unit.start(unit.name, unit.inputs)
+        policy = await unit.start(unit.name, unit.inputs, unit.thread)
         if isinstance(policy, UnitResult):  # the node did not start
             return policy
         return await self._play(policy, self._steps(policy.node), unit.events)

@@ -60,7 +60,7 @@ class Toy:
         self.environment.append({k: v for k, v in os.environ.items() if k.startswith("AGENT_CORE_")})
         if unit.name in self.raises:
             raise self.raises[unit.name]
-        policy = await unit.start(unit.name, unit.inputs)
+        policy = await unit.start(unit.name, unit.inputs, unit.thread)
         if isinstance(policy, UnitResult):
             return policy
         self.briefs.append(policy.instructions)

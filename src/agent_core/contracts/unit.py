@@ -33,7 +33,8 @@ class UnitResult:
 
 
 class NodeStart(Protocol):
-    async def __call__(self, node: str, inputs: Mapping) -> Policy | UnitResult: ...   # a UnitResult when the node does not start
+    # a UnitResult when the node does not start; `thread` is the unit's, a fragment's inner runs included (SS-14)
+    async def __call__(self, node: str, inputs: Mapping, thread: str) -> Policy | UnitResult: ...
 
 
 @dataclass(frozen=True)
