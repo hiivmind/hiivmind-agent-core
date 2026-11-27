@@ -462,7 +462,11 @@ class Harness:
             start=start, end=_now(), failures=run.failures, events=self.hub.record(), labels=run.labels, run_id=run_id,
             sequence=sequence, result=result, error=error, progress=macro.progress,
         )
-        return SequenceResult(record.end_state, record.facts or {}, record.steps, run_id, record.summary, record, run_dir)
+        # a result the journal stored before outputs were kept has none
+        outputs = dict(result.get("outputs", {}) if result is not None else macro.progress.get("outputs", {}))
+        return SequenceResult(
+            record.end_state, record.facts or {}, record.steps, run_id, record.summary, record, run_dir, outputs
+        )
 
     # --- the facade -------------------------------------------------------------------------------------------
 

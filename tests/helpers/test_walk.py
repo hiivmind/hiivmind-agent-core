@@ -200,3 +200,24 @@ def test_the_walk_registers_itself_with_its_two_functions():
 
     registered = REGISTERED["walk"]["topology"]
     assert (registered.walk_sequence, registered.walk_fragment) == (walk.walk_sequence, walk.walk_fragment)
+
+
+async def test_an_input_that_shares_a_name_with_an_output_is_not_an_output(port):   # SS-10, E11
+    import dataclasses
+
+    from agent_core.contracts.topology import END, NodeContract, SequenceDef, Step
+    from agent_core.helpers.walk import walk_sequence
+
+    def walked(result):
+        p = port(nodes=Nodes(src=result))
+        topology = dataclasses.replace(
+            p.topology,
+            nodes={**p.topology.nodes, "src": NodeContract("src", ("sources",), ("sources",), ("updated", "declined"))},
+            sequences={"s": SequenceDef("s", "d", Step("src"), {}, (), {"src": {"updated": END, "declined": END}})},
+        )
+        return walk_sequence(dataclasses.replace(p, topology=topology), "s", {"sources": "all"})
+
+    declined = await walked({"outcome": "declined", "outputs": {}})
+    assert (declined["facts"]["sources"], declined["outputs"]) == ("all", {})
+    updated = await walked({"outcome": "updated", "outputs": {"sources": ["a"]}})
+    assert updated["outputs"] == {"sources": ["a"]}

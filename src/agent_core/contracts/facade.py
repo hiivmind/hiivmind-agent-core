@@ -52,6 +52,7 @@ class SequenceResult:
     summary: object
     record: RunRecord
     run_dir: Path   # where the run kept its files; the CLI writes `record.json` there (RP-6)
+    outputs: dict   # the declared outputs its steps returned, whether or not the run raised (SS-10)
 
 
 @runtime_checkable

@@ -554,7 +554,7 @@ async def test_a_sequence_run_gives_its_result_and_the_record_of_the_run(toy, op
     assert re.fullmatch(r"plain_run-\d{8}T\d{6}Z-[0-9a-f]{6}", result.run_id)
     assert result == facade.SequenceResult(
         "done", {"done_work": "plain-work"}, [{"step": 1, "name": "plain", "outcome": "done"}], result.run_id,
-        {"done_work": "plain-work"}, result.record, tmp_path / "runs" / result.run_id,
+        {"done_work": "plain-work"}, result.record, tmp_path / "runs" / result.run_id, {"done_work": "plain-work"},
     )
     run_dir = tmp_path / "runs" / result.run_id
     assert run_dir.is_dir() and (tmp_path / "runs" / "journal.sqlite").is_file()
