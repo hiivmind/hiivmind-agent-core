@@ -42,7 +42,7 @@ from agent_core.core.events import EventHub
 from agent_core.core.functions import FunctionTool, describe, import_declared
 from agent_core.core.instance import Instance, InstanceError, load_instance
 from agent_core.core.macro import Macro
-from agent_core.core.policy import NodePolicy
+from agent_core.core.policy import NodePolicy, QuietPolicy
 from agent_core.core.record import build, failure, masked, notes, now
 from agent_core.core.registry import BackendNotInstalled, UnknownBackend, UnknownProvider
 from agent_core.core.registry import backend as registered_backend
@@ -54,6 +54,7 @@ from agent_core.core.templates import TemplateError, render
 
 KINDS = ("backend", "context", "person", "resources", "journal", "store")
 OPENING = "Run the node."
+SUMMARY = "@summary"
 RUN_ID = re.compile(r"(.+)-\d{8}T\d{6}Z-[0-9a-f]{6}")
 
 
@@ -66,7 +67,7 @@ _new_id = new_run_id   # `rerun`'s keyword `new_run_id` hides the function insid
 
 
 async def _cannot_summarise(system: str, text: str) -> str:
-    raise RuntimeError("a job's node run has no summariser in this version")
+    raise RuntimeError("a job's node is handed nothing, so it has no summariser")
 
 
 class _Asking:
@@ -136,6 +137,7 @@ class _Run:
         self.resources, self.person, self.run_dir = resources, person, run_dir
         self.backend_name, self.session = backend_name, session
         self.labels: list[str] = []
+        self.summaries = 0
         self.failures: list[dict] = []
 
     async def end(self) -> None:
@@ -181,6 +183,23 @@ class _Run:
         return Unit(
             name, inputs, intent, thread, self.start, self.declared, h.hub, h.instance.topology, self.call, fragment, self.run_dir
         )
+
+    async def summarise(self, system: str, text: str) -> str:
+        """What the model says to `text` under the instructions `system`, in a unit with no tools on the run's backend: a
+        run of its own, with a label and a note, and told to nobody (design §3.7, SCOPE-7)."""
+        h = self._h
+        self.summaries += 1
+        label = f"{SUMMARY}#{self.summaries}"
+        self.labels.append(label)
+        policy = QuietPolicy(label=label, node=SUMMARY, instructions=system, opening=text, events=h.hub)
+        h.hub.emit(NodeStarted(label, SUMMARY, (("summary instructions", len(system)),), ()))
+
+        async def start(node: str, inputs: Mapping, thread: str) -> Policy:
+            return policy
+
+        unit = Unit(SUMMARY, {}, "start", f"{SUMMARY}/{self.summaries}", start, self.declared, h.hub, h.instance.topology, self.call)
+        result = await h.recorded(self.backend_name, self).run_node(unit)
+        return result.outputs.get("summary", "")
 
     async def check_node(self, node: str, inputs: Mapping, facts: Mapping) -> tuple[dict | None, dict]:
         """The node's declared checks (NODE-11 to NODE-13), against the session facts and its inputs: the unmet check (its
@@ -237,7 +256,8 @@ class _Run:
                 strategy = h.lookup("context", found.context if session is not None else "none")()   # a job's node gets `none`
                 handover = tuple(await strategy.build(HandoverRequest(
                     transcript=tuple(session.transcript) if session is not None else (), facts=state["session"], node=node,
-                    inputs=state["inputs"], contract=contract, summarise=_cannot_summarise,
+                    inputs=state["inputs"], contract=contract,
+                    summarise=self.summarise if session is not None else _cannot_summarise,
                 )))
                 instructions, offered, parts = make_brief(
                     h.instance, found, inputs=state["inputs"], session=state["session"], values=state["values"],

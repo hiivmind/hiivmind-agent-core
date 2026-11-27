@@ -205,6 +205,32 @@ class NodePolicy:
         return result
 
 
+class QuietPolicy:
+    """A run with no tools whose result is what the model said, told to nobody: a summary (design §3.7)."""
+
+    tools: tuple[ToolSpec, ...] = ()
+    handover: tuple[Message, ...] = ()
+
+    def __init__(self, *, label: str, node: str, instructions: str, opening: str, events: EventSink):
+        self.label, self.node, self.instructions, self.opening, self._events = label, node, instructions, opening, events
+
+    def initial(self) -> NodeState:
+        return NodeState(inputs={}, values={}, outputs={}, session={}, rejections=0, ending=None)
+
+    def review(self, response: ModelResponse, state: NodeState) -> Review:
+        return review_calls(response.calls, frozenset(), state["ending"] is not None)
+
+    async def call(self, call: ToolCall, state: NodeState) -> CallResult:
+        return CallResult("not run: this run has no tools", error=True)
+
+    async def responded(self, response: ModelResponse, state: NodeState) -> str | None:
+        return None
+
+    async def finish(self, state: NodeState, said: str) -> UnitResult:
+        self._events.emit(NodeEnded(self.label, self.node, DONE, None))
+        return UnitResult(DONE, {"summary": said})
+
+
 # --- the verbs ------------------------------------------------------------------------------------------------
 
 
