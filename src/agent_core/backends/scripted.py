@@ -149,7 +149,7 @@ class ScriptedBackend:
             for update in updates:  # in the response's order, after the last call (CTL-5)
                 if update is not None:
                     state = merge(state, update)
-        return policy.finish(state, said)
+        return await policy.finish(state, said)
 
 
 def _request(policy: Policy, conversation: list[Message]) -> tuple[RequestPart, ...]:

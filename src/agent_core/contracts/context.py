@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -10,7 +10,7 @@ from .values import Message
 
 @dataclass(frozen=True)
 class HandoverRequest:
-    transcript: tuple[Message, ...]
+    transcript: tuple[Mapping, ...]   # the session's transcript entries (CTX-5): {"user"}, {"agent"}, a node's or a sequence's
     facts: dict
     node: str
     inputs: dict

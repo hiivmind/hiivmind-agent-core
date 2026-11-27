@@ -104,7 +104,8 @@ class LangGraphBackend:
             raise mapped from e
         last = state["messages"][-1]
         said = text_of(last) if isinstance(last, AIMessage) and not last.tool_calls else ""
-        return policy.finish(state["node"], said)
+        return await policy.finish(state["node"], said)
+
     def _retries(self) -> ModelRetryMiddleware:
         """The one retry owner (MOD-6): the client's own retries are off. What it gives up on is raised as it was."""
         module, settings = self._provider, self._settings

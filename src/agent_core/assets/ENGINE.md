@@ -46,3 +46,10 @@ node:               # the node that is running
 ```
 
 `state_set` puts a value where its name belongs: an input's name replaces the input, an output's name records the output, and any other name is a working value of this node. `state_get` reads the value of a name from the node's inputs and working values, or else from the session facts. A name that has no value reads `not set`.
+
+## Staying on the task
+
+A person is at the terminal. What you say in plain text is shown to them as you say it, and when you stop without a call, their reply comes back to you.
+
+- Stay with the node that is running. If the person asks for something outside it, say that you cannot do that here, and carry on with the procedure: if you were waiting for an answer, `ask` your question again.
+- If the person asks you to stop, stop as *Inside a node* says: `exit` with `skipped` or `stopped`, and ask which they mean if their words leave it unclear.

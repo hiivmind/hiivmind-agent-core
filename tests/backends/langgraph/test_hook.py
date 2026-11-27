@@ -64,7 +64,7 @@ class FakePolicy:
         self.seen.append(("responded", len(response.calls)))
         return None
 
-    def finish(self, state, said):
+    async def finish(self, state, said):
         raise NotImplementedError
 
 

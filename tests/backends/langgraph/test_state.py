@@ -66,7 +66,7 @@ class StatePolicy:
     async def responded(self, response, state):
         return None
 
-    def finish(self, state, said):
+    async def finish(self, state, said):
         return UnitResult(state["ending"]["outcome"], {**state["values"], **state["ending"]["outputs"]})
 
 

@@ -520,29 +520,29 @@ async def test_a_job_policy_tells_the_model_nothing_after_a_response(made):     
 async def test_finish_turns_an_ending_into_a_unit_result(made):
     policy = made("shape")
     p = await play(policy, [[exit_with("done", {"count": 3})]])
-    result = policy.finish(p.state, "")
+    result = await policy.finish(p.state, "")
     assert (result.exit, result.outputs, result.reason, result.detail) == ("done", {"count": 3}, None, {})
 
 
 async def test_finish_carries_a_harness_reason_beside_the_outputs(made):
     policy = made("shape")
     p = await play(policy, [[exit_with("done", {"count": "three"})]] * 2)
-    result = policy.finish(p.state, "")
+    result = await policy.finish(p.state, "")
     assert (result.exit, result.outputs, result.reason) == ("failed", {}, "invalid_output")
     assert result.detail["errors"]
 
 
 async def test_finish_without_an_ending_is_no_exit_with_what_the_model_said(made):     # JOB-12
     policy = made("silent")
-    result = policy.finish(policy.initial(), "I will not exit.")
+    result = await policy.finish(policy.initial(), "I will not exit.")
     assert (result.exit, result.outputs, result.reason, result.detail) == ("failed", {}, "no_exit", {"said": "I will not exit."})
 
 
 async def test_finish_emits_node_ended(made):
     policy = made("shape", number=2)
     p = await play(policy, [[exit_with("done", {"count": 3})]])
-    policy.finish(p.state, "")
+    await policy.finish(p.state, "")
     ended = made("silent", number=1)
-    ended.finish(ended.initial(), "")
+    await ended.finish(ended.initial(), "")
     assert policy.events.seen == [NodeEnded("shape#2", "shape", "done", None)]
     assert ended.events.seen == [NodeEnded("silent#1", "silent", "failed", "no_exit")]

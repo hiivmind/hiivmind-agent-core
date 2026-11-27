@@ -39,7 +39,7 @@ class Replying:
         self.stops.append(response.text)
         return self.reply
 
-    def finish(self, state, said):
+    async def finish(self, state, said):
         return UnitResult("done", {"said": said})
 
 

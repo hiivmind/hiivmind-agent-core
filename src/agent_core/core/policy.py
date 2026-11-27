@@ -26,6 +26,7 @@ from agent_core.core.instance import NodeDef
 
 if TYPE_CHECKING:
     from agent_core.core.functions import FunctionTool
+    from agent_core.core.session import SessionPort
 
 CORRECTIONS = 1  # JOB-7b: outputs that fail the schema are returned once for correction
 
@@ -73,6 +74,8 @@ class NodePolicy:
         settings: object | None,
         events: EventSink,
         start: NodeState,
+        session: "SessionPort | None" = None,
+        thread: str = "",
     ):
         self.definition = definition
         self.node = definition.contract.name
@@ -90,6 +93,7 @@ class NodePolicy:
         self._settings = settings
         self._events = events
         self._start = start
+        self._session, self._thread = session, thread
 
     def initial(self) -> NodeState:
         return copy.deepcopy(self._start)
@@ -113,8 +117,16 @@ class NodePolicy:
         )
 
     async def responded(self, response: ModelResponse, state: NodeState) -> str | None:
-        """A response arrived. Nobody is there to reply in a job: a stop without a call ends the run (JOB-12)."""
-        return None
+        """A response arrived. Nobody is there to reply in a job: a stop without a call ends the run (JOB-12). In a session
+        its text is told to the person as it arrives (SS-8), and a stop without a call is answered by the person's reply
+        (KIT-10)."""
+        if self._session is None:
+            return None
+        if response.text:
+            await self._person.tell(response.text)
+        if response.calls:
+            return None
+        return await self._person.hear()
 
     # --- a call ----------------------------------------------------------------------------------------------
 
@@ -171,7 +183,7 @@ class NodePolicy:
 
     # --- the end of the run ----------------------------------------------------------------------------------
 
-    def finish(self, state: NodeState, said: str) -> UnitResult:
+    async def finish(self, state: NodeState, said: str) -> UnitResult:
         ending = state["ending"]
         if ending is None:  # the model stopped without an exit (JOB-12)
             result = UnitResult(FAILED, {}, reason=HarnessReason.NO_EXIT, detail={"said": said})
@@ -180,6 +192,11 @@ class NodePolicy:
                 ending["outcome"], ending["outputs"], reason=ending.get("reason"), detail=ending.get("detail") or {}
             )
         self._events.emit(NodeEnded(self.label, self.node, result.exit, result.reason))
+        if self._session is not None:   # what it recorded while it ran, never an output its exit was refused (NODE-9)
+            contract = self.definition.contract
+            await self._session.node_ended(
+                self._thread, self.node, dict(self._start["inputs"]), result, dict(state["outputs"]), contract.outputs,
+            )
         return result
 
 
@@ -188,7 +205,11 @@ class NodePolicy:
 
 async def _ask(policy: NodePolicy, args: dict, state: NodeState) -> CallResult:
     question = args["question"]
+    if policy._session is not None:   # saved before it is put, so that a restart asks it again (ST-1)
+        policy._session.pending(policy._thread, question)
     answer = await policy._person.ask(Question(question, policy.node, policy.number, dict(policy._start["inputs"])))
+    if policy._session is not None:
+        policy._session.pending(policy._thread, None)
     if answer is None:  # nobody is there: the job ends and says what it needed (JOB-6)
         ending = Ending(FAILED, {}, reason=HarnessReason.NEEDS_INPUT, detail={"question": question})
         return CallResult("not answered: nobody is there", error=True, update=StateUpdate(ending=ending))

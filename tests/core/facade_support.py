@@ -89,7 +89,7 @@ class Toy:
             for update in updates:
                 if update is not None:
                     state = merge(state, update)
-        return policy.finish(state, said)
+        return await policy.finish(state, said)
 
 
 class ToyPerson:

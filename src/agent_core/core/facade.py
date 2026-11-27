@@ -10,6 +10,8 @@ name. It closes its servers when it ends, whether or not it raised. It changes n
 from __future__ import annotations
 
 import asyncio
+import copy
+import dataclasses
 import json
 import os
 import re
@@ -31,9 +33,9 @@ from agent_core.contracts.policy import NodeState, Policy
 from agent_core.contracts.resources import ResourceSource
 from agent_core.contracts.topology import Check, FragmentDef, NodeContract
 from agent_core.contracts.unit import DeclaredTools, Intent, Unit, UnitResult
-from agent_core.contracts.values import FAILED, HarnessReason, Outcome
+from agent_core.contracts.values import FAILED, HarnessReason, Message, Outcome
 from agent_core.contracts.walk import WalkResult
-from agent_core.core.brief import make_brief
+from agent_core.core.brief import make_brief, offer
 from agent_core.core.checks import unknown_inputs, unmet_check
 from agent_core.core.declared import resolve
 from agent_core.core.events import EventHub
@@ -45,6 +47,7 @@ from agent_core.core.record import build, failure, masked, notes
 from agent_core.core.registry import BackendNotInstalled, UnknownBackend, UnknownProvider
 from agent_core.core.registry import backend as registered_backend
 from agent_core.core.registry import provider as registered_provider
+from agent_core.core.session import SessionPort
 from agent_core.core.settings import SettingsError, load_settings
 from agent_core.core.templates import TemplateError, render
 
@@ -129,9 +132,12 @@ class _Run:
         resources: ResourceSource,
         person: Person,
         run_dir: Path | None,
+        backend_name: str,
+        session: SessionPort | None = None,
     ):
         self._h, self.declared, self.functions, self.settings = harness, declared, functions, settings
         self.resources, self.person, self.run_dir = resources, person, run_dir
+        self.backend_name, self.session = backend_name, session
         self.labels: list[str] = []
         self.failures: list[dict] = []
 
@@ -179,10 +185,30 @@ class _Run:
             name, inputs, intent, thread, self.start, self.declared, h.hub, h.instance.topology, self.call, fragment, self.run_dir
         )
 
+    async def check_node(self, node: str, inputs: Mapping, facts: Mapping) -> tuple[dict | None, dict]:
+        """The node's declared checks (NODE-11 to NODE-13), against the session facts and its inputs: the unmet check (its
+        `message`, and its `outcome` if it has one) or None, and what the checks wrote. A placeholder that cannot be filled
+        is a `TemplateError`."""
+        found = self._h.instance.nodes[node]
+        inputs, facts = dict(inputs), dict(facts)
+
+        def fill(text: str) -> str:
+            return render(
+                text, file=found.file, settings=self.settings, inputs=inputs, session=facts, values={}, resources=self.resources,
+            )
+
+        return await unmet_check(
+            found.preconditions, {**facts, **inputs}, owner=node, call=self.port, functions=self.declared.functions, fill=fill,
+        )
+
     async def start(self, node: str, inputs: Mapping, thread: str) -> Policy | UnitResult:
         """The node start (NODE-11 to NODE-13a): the declared checks, the brief and the hand-over; a `Policy`, or the result of
-        a node that does not start. `thread` is the unit's checkpoint thread."""
-        h = self._h
+        a node that does not start. `thread` is the unit's checkpoint thread.
+
+        In a session (design §3.4) the node starts from the session facts, with its own context strategy and the session's
+        person, and its brief is made once: a unit continued on its thread is given the brief its unit entry keeps
+        (SS-14). Checks the routing run or the menu already made are not made again."""
+        h, session = self._h, self.session
         found = h.instance.nodes[node]
         contract = found.contract
         h.started += 1
@@ -192,42 +218,47 @@ class _Run:
         for tool in found.allowed_tools:  # a misdeclared node fails before any tool is called
             if tool not in self.declared.specs:
                 raise ValueError(f"`{node}` declares the tool `{tool}`, which no tool source offers")
-        state = NodeState(inputs=dict(inputs), values={}, outputs={}, session={}, rejections=0, ending=None)
-
-        def fill(text: str) -> str:
-            return render(
-                text, file=found.file, settings=self.settings, inputs=state["inputs"], session=state["session"],
-                values=state["values"], resources=self.resources,
-            )
-
+        entry = session.unit(thread) if session is not None else None
+        facts = copy.deepcopy(session.facts) if session is not None else {}
+        state = NodeState(inputs=dict(inputs), values={}, outputs={}, session=facts, rejections=0, ending=None)
         try:
-            unmet, writes = await unmet_check(
-                found.preconditions, {**state["session"], **state["inputs"]}, owner=node, call=self.port,
-                functions=self.declared.functions, fill=fill,
-            )
-            if unmet is not None and "outcome" in unmet:  # NODE-13a: the check's outcome, and no model is called
-                return UnitResult(unmet["outcome"], {}, detail={"message": unmet["message"]})
-            if unmet is not None:  # NODE-13
-                return UnitResult(FAILED, {}, reason=HarnessReason.PRECONDITION_UNMET, detail={"message": unmet["message"]})
+            if entry is not None and "checked" in entry and "instructions" not in entry:
+                writes = entry["checked"]   # the routing run or the menu made the checks (design §3.3)
+            else:
+                unmet, writes = await self.check_node(node, state["inputs"], state["session"])
+                if unmet is not None and "outcome" in unmet:  # NODE-13a: the check's outcome, and no model is called
+                    return UnitResult(unmet["outcome"], {}, detail={"message": unmet["message"]})
+                if unmet is not None:  # NODE-13
+                    return UnitResult(FAILED, {}, reason=HarnessReason.PRECONDITION_UNMET, detail={"message": unmet["message"]})
             for key, value in writes.items():  # what a met check wrote counts as recorded when the node starts (NODE-11)
                 _record(state, contract, key, value)
-            strategy = h.lookup("context", "none")()  # a job's node gets its hand-over from the first strategy
-            handover = await strategy.build(HandoverRequest(
-                transcript=(), facts=state["session"], node=node, inputs=state["inputs"], contract=contract,
-                summarise=_cannot_summarise,
-            ))
-            instructions, offered, parts = make_brief(
-                h.instance, found, inputs=state["inputs"], session=state["session"], values=state["values"],
-                settings=self.settings, resources=self.resources, tools=self.declared.specs,
-            )
+            offered = offer(found, self.declared.specs)
+            if entry is not None and "instructions" in entry:   # a continued unit keeps its first brief (SS-14)
+                instructions, parts = entry["instructions"], tuple(tuple(p) for p in entry.get("parts", ()))
+                handover = tuple(Message(**m) for m in entry["handover"])
+            else:
+                strategy = h.lookup("context", found.context if session is not None else "none")()   # a job's node gets `none`
+                handover = tuple(await strategy.build(HandoverRequest(
+                    transcript=tuple(session.transcript) if session is not None else (), facts=state["session"], node=node,
+                    inputs=state["inputs"], contract=contract, summarise=_cannot_summarise,
+                )))
+                instructions, offered, parts = make_brief(
+                    h.instance, found, inputs=state["inputs"], session=state["session"], values=state["values"],
+                    settings=self.settings, resources=self.resources, tools=self.declared.specs, session_mode=session is not None,
+                )
         except TemplateError as e:  # TPL-2b, TPL-6b
             return UnitResult(FAILED, {}, reason=HarnessReason.UNKNOWN_PLACEHOLDER, detail={"detail": str(e)})
+        if session is not None:
+            session.save_unit(thread, {
+                **(entry or {}), "node": node, "inputs": dict(inputs), "backend": self.backend_name,
+                "instructions": instructions, "handover": [dataclasses.asdict(m) for m in handover], "parts": [list(p) for p in parts],
+            })
         h.hub.emit(NodeStarted(label, node, parts, tuple(spec.name for spec in offered)))
         return NodePolicy(
-            found, number=number, instructions=instructions, tools=offered, handover=tuple(handover), opening=OPENING,
+            found, number=number, instructions=instructions, tools=offered, handover=handover, opening=OPENING,
             functions=self.functions, servers=self.declared.servers,
-            person=_Asking(self.person, h.person_lock), resources=self.resources, settings=self.settings,
-            events=h.hub, start=state,
+            person=_Asking(session.person if session is not None else self.person, h.person_lock), resources=self.resources,
+            settings=self.settings, events=h.hub, start=state, session=session, thread=thread,
         )
 
 
@@ -403,10 +434,11 @@ class Harness:
         if entry.state in ("divergent", "not built"):
             raise FeatureNotSupported(feature, self.backend_name, entry)
 
-    async def begin(self, run_dir: Path | None, backend: Backend | None = None) -> _Run:
+    async def begin(self, run_dir: Path | None, backend: Backend | None = None, session: SessionPort | None = None) -> _Run:
         """Start a run (`run_dir` is None outside a sequence): its settings, its servers (TOOL-15, made by `backend`, the
         default one when None, given the instance and the run directory in their environment, RP-1), and the
-        declared-tool set (TOOL-16). The caller calls `end` on the run."""
+        declared-tool set (TOOL-16). With a `session`, its node runs are session node runs (design §3.4). The caller calls
+        `end` on the run."""
         try:
             settings = load_settings(self.instance, [Path(f) for f in self.settings_files], self._params)
         except SettingsError as e:
@@ -419,14 +451,16 @@ class Harness:
         try:
             person = self._person if not isinstance(self._person, str) else self.lookup("person", self._person)()
             resources = self.lookup("resources", "folder")(self.root)
-            servers = (backend or self.backend(None)).servers(dict(self.servers), self.root, env)
+            chosen = backend or self.backend(None)
+            servers = chosen.servers(dict(self.servers), self.root, env)
             functions = dict(self.functions)
             declared = await resolve(functions, servers, {name: name for name in self.servers})
         except BaseException:
             if servers is not None:
                 await servers.close()
             raise
-        return _Run(self, declared, functions, settings, resources, person, run_dir)
+        name = next((n for n, made in self._backends.items() if made is chosen), self.backend_name)
+        return _Run(self, declared, functions, settings, resources, person, run_dir, name, session)
 
     async def sequence(
         self, run_id: str, go: Callable[[Macro], Awaitable[WalkResult]], run_dir: Path | None = None

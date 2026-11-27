@@ -75,4 +75,4 @@ class Policy(Protocol):
     def review(self, response: ModelResponse, state: NodeState) -> Review: ...
     async def call(self, call: ToolCall, state: NodeState) -> CallResult: ...   # a verb, a function tool, or a server tool
     async def responded(self, response: ModelResponse, state: NodeState) -> str | None: ...   # once for each response, before any of its calls runs; what to tell the model when it made no call; None ends the run
-    def finish(self, state: NodeState, said: str) -> UnitResult: ...   # emits NodeEnded
+    async def finish(self, state: NodeState, said: str) -> UnitResult: ...   # emits NodeEnded; in a session, the node's completion (design §3.6)
