@@ -31,3 +31,24 @@ async def test_what_a_strategy_hands_over_is_in_each_request_of_the_node(harness
     hand_over = [[part.messages for part in e.parts if part.kind == "hand-over"] for e in requested(h)]
     both = (Message("user", "earlier question"), Message("agent", "earlier answer"))
     assert hand_over == [[both], [both]]
+
+
+@pytest.mark.feature("F9")
+async def test_a_node_with_context_all_is_handed_the_transcript(harness, copied, tmp_path):   # NODE-15, CTX-5
+    from session_support import ScriptedPerson
+
+    from agent_core.core.session import SessionPort, new_state
+    from agent_core.stores.file import FileStore
+
+    node = copied / "nodes" / "record.md"
+    node.write_text(node.read_text().replace("allowed-tools: []\n", "allowed-tools: []\ncontext: all\n", 1))
+    h = harness({"record": [[["exit", {"outcome": "done", "outputs": {"note": "n"}}]]]}, instance=copied)
+    port = SessionPort(new_state(), FileStore(tmp_path / "runs"), "s", ScriptedPerson())
+    port.state["transcript"] = [{"user": "add a note"}, {"agent": "Which note?"}]
+    run = await h.begin(tmp_path / "runs" / "s", session=port)
+    try:
+        await h.backend(None).run_node(run.unit("record", {}, "start", "s/1"))
+    finally:
+        await run.end()
+    hand_over = [part.messages for e in requested(h) for part in e.parts if part.kind == "hand-over"]
+    assert hand_over == [(Message("user", "add a note"), Message("agent", "Which note?"))]

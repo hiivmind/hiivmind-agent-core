@@ -19,7 +19,7 @@ def test_the_tables_name_the_backends_and_the_providers_of_v0():
     }
     assert PROVIDERS == {
         "walk": {"topology": "agent_core.helpers.walk"},
-        "context": {"none": "agent_core.context.none"},
+        "context": {"none": "agent_core.context.none", "all": "agent_core.context.all"},
         "resources": {"folder": "agent_core.resources.folder"},
         "person": {"terminal": "agent_core.person.terminal", "nobody": "agent_core.person.nobody"},
         "journal": {"none": "agent_core.journals.none", "dbos": "agent_core.journals.dbos"},
