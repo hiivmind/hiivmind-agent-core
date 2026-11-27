@@ -48,7 +48,7 @@ from agent_core.core.registry import BackendNotInstalled, UnknownBackend, Unknow
 from agent_core.core.registry import backend as registered_backend
 from agent_core.core.registry import provider as registered_provider
 from agent_core.core.routing import unknown_name
-from agent_core.core.session import Session, SessionPort, check_topology, new_state
+from agent_core.core.session import Session, SessionPort, WaitingServers, check_topology, new_state
 from agent_core.core.settings import SettingsError, load_settings
 from agent_core.core.templates import TemplateError, render
 
@@ -482,6 +482,8 @@ class Harness:
             resources = self.lookup("resources", "folder")(self.root)
             chosen = backend or self.backend(None)
             servers = chosen.servers(dict(self.servers), self.root, env)
+            if session is not None:   # a server that cannot be reached waits for the person (TOOL-11f)
+                servers = WaitingServers(servers, session.person)
             functions = dict(self.functions)
             declared = await resolve(functions, servers, {name: name for name in self.servers})
         except BaseException:

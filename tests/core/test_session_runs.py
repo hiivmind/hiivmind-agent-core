@@ -166,3 +166,40 @@ async def test_a_text_told_again_on_resume_is_not_added_twice(session):   # desi
     assert s.port.state["transcript"] == [{"user": "go"}, {"agent": "Which colour?"}] and s.port.replaying
     await s.port.person.tell("Next.")
     assert s.port.state["transcript"][-1] == {"agent": "Next."} and not s.port.replaying
+
+
+class _GoneOnce:
+    """The run's tool servers, but the first call finds the server gone; the next is answered `ok`."""
+
+    def __init__(self, inner):
+        self.inner, self.calls = inner, 0
+
+    async def tools(self):
+        return await self.inner.tools()
+
+    async def call(self, name, args, state):
+        from agent_core.contracts.errors import ToolServerError
+
+        self.calls += 1
+        if self.calls == 1:
+            raise ToolServerError("shell", "run", "it stopped answering")
+        return "ok"
+
+    async def close(self):
+        await self.inner.close()
+
+
+async def test_a_server_that_cannot_be_reached_waits_for_the_person(session, monkeypatch):   # TOOL-11f, E13
+    from agent_core.backends.scripted import ScriptedBackend
+    from agent_core.contracts.events import ToolReturned
+
+    real = ScriptedBackend.servers
+    monkeypatch.setattr(ScriptedBackend, "servers", lambda self, *a: _GoneOnce(real(self, *a)))
+    count = [[["shell__run", {"command": "echo 1"}]], [["exit", {"outcome": "done", "outputs": {"total": 1}}]]]
+    s = session({"count": count}, replies=["it is back"])
+    result = await s.node("count", {"revisions": "r1"})
+    assert result.exit == "done"
+    [told] = s.person.told
+    assert "`shell`" in told and "`run`" in told
+    returned = [(e.text, e.error) for e in s.events(ToolReturned) if e.call.name == "shell__run"]
+    assert returned == [("ok", False)]

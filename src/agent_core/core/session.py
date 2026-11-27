@@ -11,14 +11,15 @@ from collections.abc import Awaitable, Callable
 from typing import TYPE_CHECKING
 
 from agent_core.contracts.context import transcript_handover
-from agent_core.contracts.errors import RunCannotStart, SessionWaits
+from agent_core.contracts.errors import RunCannotStart, SessionWaits, ToolServerError
 from agent_core.contracts.events import NodeStarted
 from agent_core.contracts.facade import SessionResult
 from agent_core.contracts.person import Person, Question
 from agent_core.contracts.store import SessionStore
+from agent_core.contracts.tools import ToolSource
 from agent_core.contracts.topology import MenuItem
 from agent_core.contracts.unit import Unit, UnitResult
-from agent_core.contracts.values import FAILED, HarnessReason
+from agent_core.contracts.values import FAILED, HarnessReason, ToolSpec
 from agent_core.core.brief import make_routing_brief
 from agent_core.core.instance import Instance
 from agent_core.core.record import now, session_record
@@ -146,6 +147,29 @@ class RecordingPerson:
             raise SessionWaits()
         self._port.add({"user": reply})
         return reply
+
+
+class WaitingServers:
+    """A run's tool servers in a session (TOOL-11f): a call to a server that cannot be reached does not end the run. The
+    person is told, with the server and the tool named, and any reply makes the same call again, until it works or the
+    person has gone (SS-5). The model sees only the result that came in the end."""
+
+    def __init__(self, inner: ToolSource, person: RecordingPerson):
+        self._inner, self._person = inner, person
+
+    async def tools(self) -> tuple[ToolSpec, ...]:
+        return await self._inner.tools()
+
+    async def call(self, name: str, args: dict, state: dict) -> object:
+        while True:
+            try:
+                return await self._inner.call(name, args, state)
+            except ToolServerError as e:
+                await self._person.tell(f"The {e}. Reply when it is put right, and the call will be made again.")
+                await self._person.hear()
+
+    async def close(self) -> None:
+        await self._inner.close()
 
 
 class Session:
