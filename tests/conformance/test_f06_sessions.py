@@ -69,3 +69,25 @@ async def test_the_session_keeps_its_record_and_its_state_in_its_directory(harne
     assert (result.session_dir / "session.json").is_file()
     assert (result.record.run_id, result.record.sequence, result.record.end_state) == (result.session_id, None, "waiting")
     assert [note.node for note in result.record.notes] == ["record"] and result.record.facts == {"note": "n"}
+
+
+@pytest.mark.feature("F6")
+async def test_a_session_saved_between_units_resumes_on_the_other_backend(harness, backend_name, tmp_path, monkeypatch):   # P25
+    import json
+
+    from agent_core.core.registry import BACKENDS
+
+    other = next(name for name in BACKENDS if name != backend_name)
+    scripts = {"record": RECORD, "@routing": ["Done."]}
+    directory = tmp_path / "other-scripts"
+    directory.mkdir()
+    for node, steps in scripts.items():
+        (directory / f"{node}.json").write_text(json.dumps(steps))
+    monkeypatch.setenv("AGENT_CORE_SCRIPTED_SCRIPTS" if other == "scripted" else "AGENT_CORE_LANGGRAPH_MODEL",
+                       str(directory) if other == "scripted" else f"script:{directory}")
+    left = await harness(scripts, backend=other, person=ScriptedPerson([None])).sessions.start("record")
+    assert left.state == "waiting"   # saved at the person's turn after `record` ended
+    h = harness(scripts, person=ScriptedPerson(["thanks", None]))
+    resumed = await h.sessions.resume(left.session_id)
+    assert [e.label for e in h.events.record() if isinstance(e, ModelRequested)] == ["@routing#1"]
+    assert resumed.facts == {"note": "n"}
